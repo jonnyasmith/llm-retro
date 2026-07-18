@@ -27,7 +27,9 @@
 	<div class="fgroup">
 		<span class="flabel">Model</span>
 		{#each models as m (m)}
-			<span class="pill model" class:on={st.models.has(m)} onclick={() => st.toggleModel(m)}>{m}</span>
+			<span class="pill model" class:on={st.models.has(m)} onclick={() => st.toggleModel(m)}
+				>{m}</span
+			>
 		{/each}
 	</div>
 	<div class="fgroup">

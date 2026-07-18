@@ -39,18 +39,17 @@
 	<div class="row nonauth-banner">
 		<span class="nonauth">⚠ Model-derived · non-authoritative</span>
 		<span class="dim">
-			The LLM pass over the same {f.length} filtered sessions — Signals remain the source of truth.
-			Extractor v{EXTRACTOR_V}.
+			The LLM pass over the same {f.length} filtered sessions — Signals remain the source of truth. Extractor
+			v{EXTRACTOR_V}.
 		</span>
 		<span class="spacer" style="flex:1"></span>
 		<span class="dim pmono">
-			{sc.totalInf} inferences · ⤺{sc.byType['course-correction']} ⌇{sc.byType['input-noise']} ▽{sc.byType[
-				'dumb-zone'
-			]}
+			{sc.totalInf} inferences · ⤺{sc.byType['course-correction']} ⌇{sc.byType['input-noise']} ▽{sc
+				.byType['dumb-zone']}
 		</span>
 	</div>
 	{#if variant === 'B'}
-		<InsightWorkbench {f} {sc} />
+		<InsightWorkbench {f} />
 	{:else if variant === 'C'}
 		<InsightExplorer {f} {sc} />
 	{:else}

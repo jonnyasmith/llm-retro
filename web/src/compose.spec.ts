@@ -6,7 +6,15 @@ describe('the default Compose profile', () => {
 	it('contains only the long-running db and web services', () => {
 		const services = execFileSync(
 			'docker',
-			['compose', '--project-directory', '..', '--env-file', '../.env.example', 'config', '--services'],
+			[
+				'compose',
+				'--project-directory',
+				'..',
+				'--env-file',
+				'../.env.example',
+				'config',
+				'--services'
+			],
 			{
 				cwd: process.cwd(),
 				encoding: 'utf8'

@@ -1,11 +1,15 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
+
 	// Auto-discover prototypes: every nested `<name>/+page.svelte` is a prototype.
-	// No manual registry to drift out of sync.
+	// No manual registry to drift out of sync. Each discovered name maps to its
+	// real, dev-only route at `/prototype/<name>` (a resolved internal pathname).
 	const modules = import.meta.glob('./*/+page.svelte');
 	const prototypes = Object.keys(modules)
 		.map((path) => /^\.\/([^/]+)\/\+page\.svelte$/.exec(path)?.[1])
 		.filter((name): name is string => Boolean(name))
-		.sort();
+		.sort()
+		.map((name) => ({ name, href: `/prototype/${name}` as ResolvedPathname }));
 </script>
 
 <main class="index">
@@ -18,8 +22,8 @@
 		<p class="index__empty">No prototypes yet.</p>
 	{:else}
 		<ul class="index__list">
-			{#each prototypes as name (name)}
-				<li><a href="/prototype/{name}">{name}</a></li>
+			{#each prototypes as { name, href } (name)}
+				<li><a {href}>{name}</a></li>
 			{/each}
 		</ul>
 	{/if}

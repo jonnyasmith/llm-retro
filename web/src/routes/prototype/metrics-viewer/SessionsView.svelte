@@ -24,9 +24,18 @@
 <div class="md">
 	<div class="md-list">
 		<div class="md-agg">
-			<div><div class="k">Sessions</div><div class="v">{a.sessions}</div></div>
-			<div><div class="k">Tokens</div><div class="v">{fmtK(a.totalTokens)}</div></div>
-			<div><div class="k">Turns</div><div class="v">{a.turns}</div></div>
+			<div>
+				<div class="k">Sessions</div>
+				<div class="v">{a.sessions}</div>
+			</div>
+			<div>
+				<div class="k">Tokens</div>
+				<div class="v">{fmtK(a.totalTokens)}</div>
+			</div>
+			<div>
+				<div class="k">Turns</div>
+				<div class="v">{a.turns}</div>
+			</div>
 			<div>
 				<div class="k">Active time</div>
 				<div class="v">{fmtMin(Math.round(a.activeMs / 60000))}</div>

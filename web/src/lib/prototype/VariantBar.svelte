@@ -40,7 +40,9 @@
 		border: 1px solid rgba(255, 255, 255, 0.12);
 		box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
 		backdrop-filter: blur(8px);
-		font: 500 13px/1.2 system-ui, sans-serif;
+		font:
+			500 13px/1.2 system-ui,
+			sans-serif;
 		color: #e6edf3;
 	}
 	.variant-bar__label {

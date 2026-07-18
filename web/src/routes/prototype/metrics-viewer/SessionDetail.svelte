@@ -43,7 +43,9 @@
 		</h3>
 		<div class="kpi">{fmtK(tt)}</div>
 		<div class="hint">
-			in {fmtK(session.tokens.in)} · out {fmtK(session.tokens.out)} · cache {fmtK(session.tokens.cache)}
+			in {fmtK(session.tokens.in)} · out {fmtK(session.tokens.out)} · cache {fmtK(
+				session.tokens.cache
+			)}
 		</div>
 	</div>
 	<div class="card">
@@ -77,9 +79,8 @@
 			<h3>Response latency by hour</h3>
 			<span class="spacer" style="flex:1"></span>
 			<div class="toggle">
-				<button
-					class:on={st.latencyMode === 'raw'}
-					onclick={() => (st.latencyMode = 'raw')}>avg latency</button
+				<button class:on={st.latencyMode === 'raw'} onclick={() => (st.latencyMode = 'raw')}
+					>avg latency</button
 				>
 				<button
 					class:on={st.latencyMode === 'perToken'}

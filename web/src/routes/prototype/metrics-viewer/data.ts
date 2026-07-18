@@ -137,26 +137,64 @@ export const ALL: Session[] = Array.from({ length: 64 }, (_, i) => makeSession(i
 export const EXTRACTOR_V = '0.4.1';
 
 const CC = [
-	{ s: 'Redirected the model away from rewriting the working parser.', e: "no — don't touch the parser, just add the flag" },
-	{ s: 'Halted an unrequested refactor of the auth flow.', e: "stop, that's not what I asked. revert that." },
-	{ s: 'Corrected a wrong assumption about the DB schema.', e: 'the column already exists, check the migration' },
-	{ s: 'Re-scoped after the model over-engineered the solution.', e: 'this is way too much — just the one function' },
-	{ s: 'Stopped the model deleting tests it misread as dead.', e: 'those tests are used, leave them' },
-	{ s: 'Pulled the model back after it invented a config key.', e: "that option doesn't exist, read the schema" }
+	{
+		s: 'Redirected the model away from rewriting the working parser.',
+		e: "no — don't touch the parser, just add the flag"
+	},
+	{
+		s: 'Halted an unrequested refactor of the auth flow.',
+		e: "stop, that's not what I asked. revert that."
+	},
+	{
+		s: 'Corrected a wrong assumption about the DB schema.',
+		e: 'the column already exists, check the migration'
+	},
+	{
+		s: 'Re-scoped after the model over-engineered the solution.',
+		e: 'this is way too much — just the one function'
+	},
+	{
+		s: 'Stopped the model deleting tests it misread as dead.',
+		e: 'those tests are used, leave them'
+	},
+	{
+		s: 'Pulled the model back after it invented a config key.',
+		e: "that option doesn't exist, read the schema"
+	}
 ];
 const NOISE = [
-	{ s: "Dictation garbled 'auth' → 'oath'; model built OAuth for 2 turns.", e: 'add oath to teh login page', fix: 'add auth to the login page' },
-	{ s: "Typo 'delete' → 'dilate' sent it down an image path.", e: 'can you dilate the old rows', fix: 'can you delete the old rows' },
-	{ s: 'Dropped word left the request ambiguous; model guessed wrong.', e: 'make it work the the config', fix: 'make it read from the config' }
+	{
+		s: "Dictation garbled 'auth' → 'oath'; model built OAuth for 2 turns.",
+		e: 'add oath to teh login page',
+		fix: 'add auth to the login page'
+	},
+	{
+		s: "Typo 'delete' → 'dilate' sent it down an image path.",
+		e: 'can you dilate the old rows',
+		fix: 'can you delete the old rows'
+	},
+	{
+		s: 'Dropped word left the request ambiguous; model guessed wrong.',
+		e: 'make it work the the config',
+		fix: 'make it read from the config'
+	}
 ];
-const DZ = 'Quality degraded past ~{K}k ctx tokens: re-suggested an edit from 20 turns back, lost track of the file it had changed.';
+const DZ =
+	'Quality degraded past ~{K}k ctx tokens: re-suggested an edit from 20 turns back, lost track of the file it had changed.';
 
 interface InfSeed {
 	s: string;
 	e: string;
 	fix?: string;
 }
-function inf(type: InferenceType, session: Session, turn: number, obj: InfSeed, promptV: string, conf: number): Inference {
+function inf(
+	type: InferenceType,
+	session: Session,
+	turn: number,
+	obj: InfSeed,
+	promptV: string,
+	conf: number
+): Inference {
 	return {
 		id: `INF-${session.id}-${type}-${turn}`,
 		type,
@@ -188,7 +226,16 @@ for (const session of ALL) {
 			t = ri(2, session.turns);
 		} while (usedT.has(t));
 		usedT.add(t);
-		infs.push(inf('course-correction', session, t, CC[ri(0, CC.length - 1)], 'cc@3', +(0.62 + rnd() * 0.34).toFixed(2)));
+		infs.push(
+			inf(
+				'course-correction',
+				session,
+				t,
+				CC[ri(0, CC.length - 1)],
+				'cc@3',
+				+(0.62 + rnd() * 0.34).toFixed(2)
+			)
+		);
 	}
 	const nNoise = rnd() < 0.38 ? ri(1, 2) : 0;
 	for (let k = 0; k < nNoise; k++) {
@@ -197,14 +244,33 @@ for (const session of ALL) {
 			t = ri(1, session.turns);
 		} while (usedT.has(t));
 		usedT.add(t);
-		infs.push(inf('input-noise', session, t, NOISE[ri(0, NOISE.length - 1)], 'noise@2', +(0.55 + rnd() * 0.34).toFixed(2)));
+		infs.push(
+			inf(
+				'input-noise',
+				session,
+				t,
+				NOISE[ri(0, NOISE.length - 1)],
+				'noise@2',
+				+(0.55 + rnd() * 0.34).toFixed(2)
+			)
+		);
 	}
 	// dumb-zone DETECTION (per session): degradation point in cumulative ctx tokens, or null
 	let dz: Inference | null = null;
 	if (session.turns > 22 && rnd() < 0.5) {
 		const kTok = ri(34, 128);
 		const t = ri(Math.ceil(session.turns * 0.55), session.turns);
-		dz = inf('dumb-zone', session, t, { s: DZ.replace('{K}', String(kTok)), e: 'you already changed that file — see turn ' + (t - 18) }, 'dz@2', +(0.6 + rnd() * 0.3).toFixed(2));
+		dz = inf(
+			'dumb-zone',
+			session,
+			t,
+			{
+				s: DZ.replace('{K}', String(kTok)),
+				e: 'you already changed that file — see turn ' + (t - 18)
+			},
+			'dz@2',
+			+(0.6 + rnd() * 0.3).toFixed(2)
+		);
 		dz.degradedAtTokens = kTok * 1000;
 		infs.push(dz);
 	}

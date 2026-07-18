@@ -18,7 +18,9 @@
 		vb.select('B');
 	}
 
-	const topTheme = $derived([...sc.themes].sort((a, b) => b.sessions.length - a.sessions.length)[0]);
+	const topTheme = $derived(
+		[...sc.themes].sort((a, b) => b.sessions.length - a.sessions.length)[0]
+	);
 	const mostCC = $derived(
 		[...f]
 			.map((s) => [s, s.inferences.filter((i) => i.type === 'course-correction').length] as const)
@@ -33,7 +35,9 @@
 		<span class="spacer" style="flex:1"></span>
 		<button class="pill on" style="cursor:pointer">↻ Regenerate synthesis</button>
 	</div>
-	<p class="qsub">A generated read of this scope. Chips jump into the Workbench for the evidence.</p>
+	<p class="qsub">
+		A generated read of this scope. Chips jump into the Workbench for the evidence.
+	</p>
 	<div class="findgrid">
 		{#if topTheme}
 			<div class="findcard" style="border-left-color:#4c8dff">
@@ -56,8 +60,8 @@
 			<div class="findcard" style="border-left-color:#e2b341">
 				<div class="findk" style="color:#e2b341">⤺ Most redirected</div>
 				<div class="findb">
-					<b>{mostCC[0].title}</b> ({mostCC[0].id}) took <b>{mostCC[1]}</b> course-corrections to keep
-					on track.
+					<b>{mostCC[0].title}</b> ({mostCC[0].id}) took <b>{mostCC[1]}</b> course-corrections to
+					keep on track.
 					<a
 						href="#"
 						data-jump={mostCC[0].id}
@@ -121,7 +125,9 @@
 			<div class="dim">No themes for this scope.</div>
 		{/each}
 	</div>
-	<h3 class="dh">Dumb-zone aggregate <span class="dim" style="font-weight:400">· deterministic</span></h3>
+	<h3 class="dh">
+		Dumb-zone aggregate <span class="dim" style="font-weight:400">· deterministic</span>
+	</h3>
 	{#if sc.dza.points.length === 0}
 		<div class="muted" style="padding:24px">No degradation detected in this scope.</div>
 	{:else}

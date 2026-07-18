@@ -20,11 +20,15 @@
 	<div class="row">
 		<span class="itag" style="color:{m.color}">{m.icon} {m.label}</span>
 		<span class="spacer" style="flex:1"></span>
-		<span class="conf" title="model confidence">conf {(inference.confidence * 100).toFixed(0)}%</span>
+		<span class="conf" title="model confidence"
+			>conf {(inference.confidence * 100).toFixed(0)}%</span
+		>
 	</div>
 	<div class="isum">{inference.summary}</div>
 	{#if inference.correctedTo}
-		<div class="fix">heard: <s>{inference.evidence}</s> &nbsp;→&nbsp; meant: <b>{inference.correctedTo}</b></div>
+		<div class="fix">
+			heard: <s>{inference.evidence}</s> &nbsp;→&nbsp; meant: <b>{inference.correctedTo}</b>
+		</div>
 	{:else}
 		<blockquote class="ev">{inference.evidence}</blockquote>
 	{/if}

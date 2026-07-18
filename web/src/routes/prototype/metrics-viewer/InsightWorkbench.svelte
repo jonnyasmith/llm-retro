@@ -1,12 +1,11 @@
 <script lang="ts">
 	import type { InferenceType, Session } from './types';
-	import { fmtK, fmtMin, type InsightScope } from './aggregate';
+	import { fmtK, fmtMin } from './aggregate';
 	import { INFMETA } from './meta';
 	import { useViewerState } from './viewerState.svelte';
 	import ProvenanceStamp from './ProvenanceStamp.svelte';
 
-	// sc kept in the prop contract for parity with the other variants.
-	let { f }: { f: Session[]; sc: InsightScope } = $props();
+	let { f }: { f: Session[] } = $props();
 
 	const st = useViewerState();
 
@@ -68,7 +67,7 @@
 					{s.id} · {s.turns} turns ·
 					{#if dots(s).length}
 						{#each dots(s) as d, di (d.t)}
-							{#if di > 0}{' '}{/if}<span class="idot" style="color:{INFMETA[d.t].color}"
+							{#if di > 0}&nbsp;{/if}<span class="idot" style="color:{INFMETA[d.t].color}"
 								>{INFMETA[d.t].icon}{d.n}</span
 							>
 						{/each}
@@ -110,7 +109,8 @@
 						{/if}
 						<div class="tturn" id="turn-{it.inf.turnRef}">
 							<div class="tnum">
-								Turn {it.inf.turnRef}<div class="tref pmono">{it.inf.messageRef}</div>
+								Turn {it.inf.turnRef}
+								<div class="tref pmono">{it.inf.messageRef}</div>
 							</div>
 							<div class="tbody">
 								<div class="tmsg user"><span class="who">you</span> {it.inf.evidence}</div>
@@ -121,7 +121,8 @@
 								<div class="annot" style="border-left-color:{INFMETA[it.inf.type].color}">
 									<div class="row">
 										<span class="itag" style="color:{INFMETA[it.inf.type].color}">
-											{INFMETA[it.inf.type].icon} {INFMETA[it.inf.type].label}
+											{INFMETA[it.inf.type].icon}
+											{INFMETA[it.inf.type].label}
 										</span>
 										<span class="spacer" style="flex:1"></span>
 										<span class="conf">conf {(it.inf.confidence * 100).toFixed(0)}%</span>

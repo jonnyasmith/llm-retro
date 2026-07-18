@@ -3,7 +3,14 @@
 
 import type { EChartsOption } from 'echarts';
 import type { CallbackDataParams } from 'echarts/types/dist/shared';
-import { fmtK, fmtMin, hourSeries, type Aggregate, type DumbZoneAggregate, type LatencyMode } from './aggregate';
+import {
+	fmtK,
+	fmtMin,
+	hourSeries,
+	type Aggregate,
+	type DumbZoneAggregate,
+	type LatencyMode
+} from './aggregate';
 import type { Session } from './types';
 
 const AX = { text: '#8b98a5', line: '#2a323d', split: '#1c232d' };
@@ -81,7 +88,12 @@ export function toolsOption(a: Aggregate): EChartsOption {
 		xAxis: { type: 'value', ...axStyle },
 		yAxis: { type: 'category', data: ent.map((e) => e[0]), ...axStyle },
 		series: [
-			{ type: 'bar', data: ent.map((e) => e[1]), itemStyle: { color: '#10a37f', borderRadius: [0, 4, 4, 0] }, barWidth: '60%' }
+			{
+				type: 'bar',
+				data: ent.map((e) => e[1]),
+				itemStyle: { color: '#10a37f', borderRadius: [0, 4, 4, 0] },
+				barWidth: '60%'
+			}
 		]
 	};
 }
@@ -217,7 +229,16 @@ export function gaugeOption(pct: number): EChartsOption {
 				radius: '100%',
 				center: ['50%', '70%'],
 				progress: { show: true, width: 12 },
-				axisLine: { lineStyle: { width: 12, color: [[0.5, '#3fb950'], [0.75, '#d29922'], [1, '#f85149']] } },
+				axisLine: {
+					lineStyle: {
+						width: 12,
+						color: [
+							[0.5, '#3fb950'],
+							[0.75, '#d29922'],
+							[1, '#f85149']
+						]
+					}
+				},
 				pointer: { width: 4 },
 				axisTick: { show: false },
 				splitLine: { show: false },

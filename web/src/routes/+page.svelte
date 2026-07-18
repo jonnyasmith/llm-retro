@@ -1,3 +1,7 @@
+<script lang="ts">
+	import { resolve } from '$app/paths';
+</script>
+
 <svelte:head>
 	<title>LLM Retro</title>
 	<meta name="description" content="Retro insights for AI coding Sessions" />
@@ -6,5 +10,5 @@
 <main>
 	<h1>LLM Retro</h1>
 	<p>The control plane is running.</p>
-	<p><a href="/api/health">Check database connectivity</a></p>
+	<p><a href={resolve('/api/health')}>Check database connectivity</a></p>
 </main>

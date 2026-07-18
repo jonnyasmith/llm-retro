@@ -82,7 +82,8 @@ export function agg(sessions: readonly Session[]): Aggregate {
 		a.subTokens += s.subagents.tokens;
 		a.durationMin += s.durationMin;
 		a.activeMs += s.activeMs;
-		for (const [m, share] of Object.entries(s.mix)) a.modelTokens[m] = (a.modelTokens[m] || 0) + tt * share;
+		for (const [m, share] of Object.entries(s.mix))
+			a.modelTokens[m] = (a.modelTokens[m] || 0) + tt * share;
 		for (const [t, c] of Object.entries(s.tools)) a.toolCounts[t] = (a.toolCounts[t] || 0) + c;
 		for (const l of s.latency) {
 			const h = (l.instant.getUTCHours() + 1) % 24;
@@ -99,7 +100,11 @@ export type LatencyMode = 'raw' | 'perToken';
 
 export function hourSeries(a: Aggregate, mode: LatencyMode): (number | null)[] {
 	return a.latByHour.map((h) =>
-		!h.n ? null : mode === 'perToken' ? +(h.sumMs / h.sumTok).toFixed(2) : +(h.sumMs / h.n / 1000).toFixed(2)
+		!h.n
+			? null
+			: mode === 'perToken'
+				? +(h.sumMs / h.sumTok).toFixed(2)
+				: +(h.sumMs / h.n / 1000).toFixed(2)
 	);
 }
 
@@ -143,9 +148,15 @@ export interface InsightScope {
 }
 export function iScope(f: readonly Session[]): InsightScope {
 	const totalInf = f.reduce((n, s) => n + s.inferences.length, 0);
-	const byType: Record<InferenceType, number> = { 'course-correction': 0, 'input-noise': 0, 'dumb-zone': 0 };
+	const byType: Record<InferenceType, number> = {
+		'course-correction': 0,
+		'input-noise': 0,
+		'dumb-zone': 0
+	};
 	for (const s of f) for (const i of s.inferences) byType[i.type]++;
-	const themes = THEMES.map((t) => ({ ...t, sessions: f.filter(t.match) })).filter((t) => t.sessions.length);
+	const themes = THEMES.map((t) => ({ ...t, sessions: f.filter(t.match) })).filter(
+		(t) => t.sessions.length
+	);
 	return { totalInf, byType, themes, dza: dumbZoneAggregate(f) };
 }
 

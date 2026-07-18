@@ -35,17 +35,13 @@
 		top: 0;
 		z-index: 900;
 		padding: 5px 14px;
-		font: 700 11px/1.4 ui-monospace, monospace;
+		font:
+			700 11px/1.4 ui-monospace,
+			monospace;
 		letter-spacing: 0.5px;
 		text-align: center;
 		color: #0e1116;
-		background: repeating-linear-gradient(
-			45deg,
-			#d29922,
-			#d29922 12px,
-			#e0aa38 12px,
-			#e0aa38 24px
-		);
+		background: repeating-linear-gradient(45deg, #d29922, #d29922 12px, #e0aa38 12px, #e0aa38 24px);
 	}
 	.prototype-body {
 		min-height: calc(100vh - 26px);

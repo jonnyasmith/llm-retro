@@ -1,6 +1,7 @@
 import { getContext, setContext } from 'svelte';
 import { page } from '$app/state';
 import { replaceState } from '$app/navigation';
+import type { ResolvedPathname } from '$app/types';
 
 /**
  * One selectable UI variation of a prototype. Prototypes that want to compare
@@ -48,7 +49,10 @@ class VariantStore {
 		this.#selected = id;
 		const url = new URL(page.url);
 		url.searchParams.set('variant', id);
-		replaceState(url, {});
+		// page.url already carries the base path, so pathname+search is an
+		// already-resolved internal pathname — reflect it back without navigating.
+		const target = `${url.pathname}${url.search}` as ResolvedPathname;
+		replaceState(target, {});
 	}
 }
 
