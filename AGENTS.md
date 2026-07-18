@@ -8,7 +8,7 @@
 
 Use progressive disclosure: read only the guidance relevant to the current task, immediately before it is needed.
 
-- **Domain docs:** Monorepo on the multi-context layout — a root `CONTEXT-MAP.md` (shared kernel) points to per-context `CONTEXT.md` files (`web/`, and `jobs/`/`db/` lazily). See `docs/agents/domain.md`.
+- **Domain docs:** Multi-context (monorepo) layout. See `docs/agents/domain.md`.
 - **Planning:** When creating or reviewing an implementation plan (not the actual implement phase), follow `docs/agents/planning.md`.
 - **Issue tracker:** Issues and PRDs are tracked in GitHub Issues for this repository. See `docs/agents/issue-tracker.md`.
 - **Prototyping:** Build throwaway UI prototypes as dev-only routes under `/prototype`. See `docs/agents/prototyping.md`.

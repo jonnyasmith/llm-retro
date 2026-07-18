@@ -4,9 +4,10 @@ How the engineering skills should consume this repo's domain documentation when 
 
 ## Before exploring, read these
 
-This repo is **multi-context** (a monorepo): start at **`CONTEXT-MAP.md`** at the root — it holds
-the shared kernel and points to one `CONTEXT.md` per context (top-level app dir, e.g. `web/`). Read
-the map plus the context doc(s) relevant to your topic.
+This repo is **multi-context** (a monorepo): start at **`CONTEXT-MAP.md`** at the root — a small
+index that lists the contexts and how they relate, one `CONTEXT.md` per context (top-level app dir,
+e.g. `web/`). Read the map, then the context doc(s) relevant to your topic; the language lives in
+those nested files, not the map.
 
 - **`docs/adr/`** — system-wide decisions; read the ADRs that touch the area you're about to work in.
 - **`<context>/docs/adr/`** — context-scoped decisions (e.g. `web/docs/adr/`); read these too when
