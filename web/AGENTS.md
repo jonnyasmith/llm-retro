@@ -1,6 +1,11 @@
 # Web
 
-The SvelteKit application: the control plane and Viewers. Domain language is in [`CONTEXT.md`](CONTEXT.md); the root [`../AGENTS.md`](../AGENTS.md) also applies.
+The SvelteKit application: the control plane and Viewers. The root [`../AGENTS.md`](../AGENTS.md) also applies.
+
+## Domain & decisions
+
+- **Language:** [`CONTEXT.md`](CONTEXT.md) — web's glossary.
+- **Decisions:** [`docs/adr/`](docs/adr/) — web-scoped ADRs.
 
 ## Verify after changes
 
