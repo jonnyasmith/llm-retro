@@ -1,4 +1,17 @@
 {
   "cSpell.language": "en-GB",
-  "cSpell.words": ["linters", "llmretro", "modeling", "pgvector"]
+  "cSpell.words": [
+    "incl",
+    "incrementality",
+    "linters",
+    "llmretro",
+    "modeling",
+    "Ollama",
+    "pgvector",
+    "pytest",
+    "sparkline",
+    "unparseable",
+    "unpromoted",
+    "upserts"
+  ]
 }
