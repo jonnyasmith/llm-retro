@@ -1,8 +1,23 @@
-# LLM Retro
+# LLM Retro — Context Map
 
 A tool for retrospectively reviewing the user's own AI-coding sessions (Claude, Codex, pi) to learn what works and what doesn't over time. Ingests local session transcripts, extracts structured signals, and serves both quantitative metrics and emergent qualitative insights.
 
-## Language
+This repository is a monorepo. The **shared kernel** below is the ubiquitous language every context uses identically — read it first. Context-specific vocabulary lives in each context's own `CONTEXT.md`; read the one(s) relevant to your task.
+
+## Contexts
+
+| Context      | Path    | Context doc                    | Owns                                                     |
+| ------------ | ------- | ------------------------------ | ------------------------------------------------------- |
+| **Web**      | `web/`  | [`web/CONTEXT.md`](web/CONTEXT.md) | The control plane + Viewers (SvelteKit app, UI, design system) |
+| **Jobs**     | `jobs/` | — (created lazily)             | Extraction & analysis Job containers                    |
+| **Database** | `db/`   | — (created lazily)             | Normalised Session Model schema + migrations            |
+
+`jobs/` and `db/` get their own `CONTEXT.md` once they grow vocabulary that isn't already in the shared kernel — created lazily by domain modelling, not scaffolded empty.
+
+- **System-wide ADRs** live in [`docs/adr/`](docs/adr/) — decisions that cut across contexts.
+- **Context-specific ADRs** live under `<context>/docs/adr/` — e.g. [`web/docs/adr/`](web/docs/adr/).
+
+## Ubiquitous language (shared kernel)
 
 **Session**:
 One recorded conversation between the user and an AI coding tool, from a single transcript on disk.
