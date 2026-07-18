@@ -1,23 +1,26 @@
 FROM node:24-slim AS build
 
-WORKDIR /app
+WORKDIR /app/web
 RUN corepack enable
 
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml web/.npmrc ./
 RUN pnpm install --frozen-lockfile
 
-COPY . .
+COPY web/ ./
 RUN pnpm build && pnpm prune --prod
 
 FROM node:24-slim AS runtime
 
-WORKDIR /app
+WORKDIR /app/web
 ENV NODE_ENV=production
 
-COPY --from=build /app/build ./build
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/package.json ./package.json
+COPY --from=build /app/web/build ./build
+COPY --from=build /app/web/node_modules ./node_modules
+COPY --from=build /app/web/package.json ./package.json
+COPY web/scripts ./scripts
+COPY web/src/lib/server/migrations.ts ./src/lib/server/migrations.ts
+COPY db /app/db
 
 EXPOSE 3000
 
-CMD ["node", "build"]
+CMD ["sh", "-c", "node scripts/migrate.ts && node build"]
