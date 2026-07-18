@@ -1,6 +1,6 @@
 # Prototyping
 
-How to build a throwaway UI prototype in this repo. This is the project's routing convention that the global `prototype` skill defers to ("obey whatever routing convention the project already uses"). Rationale and rejected alternatives: [ADR-0010](../adr/0010-prototypes-as-dev-only-sveltekit-routes.md).
+How to build a throwaway UI prototype in this repo. This is the project's routing convention that the global `prototype` skill defers to ("obey whatever routing convention the project already uses"). Rationale and rejected alternatives: [ADR-0010](../../../docs/adr/0010-prototypes-as-dev-only-sveltekit-routes.md).
 
 ## Vocabulary
 
