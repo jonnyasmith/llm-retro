@@ -19,6 +19,10 @@ _Avoid_: Schema, canonical format.
 **Turn**:
 One user-prompt-then-AI-response exchange within a Session.
 
+**Message**:
+One record in a Session's ordered stream — a user prompt, an AI response, or a tool result. Sessions are a flat sequence of Messages; a Turn is derived from them, not stored.
+_Avoid_: Record, event, entry.
+
 **Signal**:
 A structured fact extracted from a Session that a view renders — e.g. turn count, corrections, subagent usage, tokens, model, course-corrections, input-noise waste.
 _Avoid_: Metric, feature, datapoint.
