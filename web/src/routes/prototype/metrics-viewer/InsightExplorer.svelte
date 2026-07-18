@@ -5,6 +5,7 @@
 	import { INFMETA } from './meta';
 	import { dumbZoneOption } from './charts';
 	import { useViewerState } from './viewerState.svelte';
+	import { Button, MasterDetail, Row, SelectableRow, Spacer, Text, Verdict } from '$lib/ui';
 	import Chart from './Chart.svelte';
 	import InferenceCard from './InferenceCard.svelte';
 	import ProvenanceStamp from './ProvenanceStamp.svelte';
@@ -24,89 +25,77 @@
 			.sort((a, b) => (a.dumbZone!.degradedAtTokens ?? 0) - (b.dumbZone!.degradedAtTokens ?? 0))
 	);
 
-	function toMetrics(e: Event, id: string) {
-		e.preventDefault();
+	function toMetrics(id: string) {
 		st.selected = id;
 		st.view = 'sessions';
 	}
-
-	function keyActivate(e: KeyboardEvent, fn: () => void) {
-		if (e.key === 'Enter' || e.key === ' ') {
-			e.preventDefault();
-			fn();
-		}
-	}
 </script>
 
-<div class="md">
-	<div class="md-list" id="iThemes">
-		<div class="md-listhead"><span>Pattern</span></div>
+<MasterDetail>
+	{#snippet list()}
+		<div class="listhead"><span>Pattern</span></div>
 		{#each items as it (it.id)}
-			<div
-				class="srow"
-				class:sel={st.themeSel === it.id}
+			<SelectableRow
+				layout="block"
+				selected={st.themeSel === it.id}
 				data-theme={it.id}
-				role="button"
-				tabindex="0"
-				onclick={() => (st.themeSel = it.id)}
-				onkeydown={(e) => keyActivate(e, () => (st.themeSel = it.id))}
+				onselect={() => (st.themeSel = it.id)}
 			>
 				<div class="srow-top"><span class="stitle">{it.title}</span></div>
 				<div class="srow-sub">
 					{it.id === 'DZ' ? 'deterministic aggregate' : 'thematic synthesis'} · {it.n} sessions
 				</div>
-			</div>
+			</SelectableRow>
 		{/each}
-	</div>
-	<div class="md-detail" id="iDetail">
+	{/snippet}
+	{#snippet detail()}
 		{#if st.themeSel === 'DZ'}
 			<div class="idetail-head">
 				<h2 style="font-size:18px">Dumb-zone threshold</h2>
-				<div class="muted" style="margin-top:2px">
+				<Text tone="muted" style="display:block;margin-top:2px">
 					Deterministic — distribution over per-session degradation points, no 2nd model pass.
-				</div>
+				</Text>
 			</div>
 			{#if sc.dza.points.length === 0}
-				<div class="muted" style="padding:24px">No degradation detected in this scope.</div>
+				<Text tone="muted" style="display:block;padding:24px"
+					>No degradation detected in this scope.</Text
+				>
 			{:else}
 				<Chart option={dumbZoneOption(sc.dza)} height={220} />
 			{/if}
-			<div class="verdict">
-				<span class="lbl">Reads as →</span>
+			<Verdict label="Reads as →">
 				{#if sc.dza.threshold}
 					Quality degrades past <b>~{fmtK(sc.dza.threshold)}</b> context tokens — median of
 					<b>{sc.dza.detected}/{sc.dza.total}</b> sessions.
 				{:else}
 					No degradation detected.
 				{/if}
-			</div>
+			</Verdict>
 			<h3 class="dh">Sessions behind it</h3>
 			{#each dzRows as s (s.id)}
 				<div class="tsession">
-					<div class="row">
-						<b>{s.title}</b> <span class="dim">{s.id}</span>
-						<span class="spacer" style="flex:1"></span>
-						<span class="dim pmono">~{fmtK(s.dumbZone!.degradedAtTokens ?? 0)} ctx</span>
-						<a
-							href="#"
-							class="metricslink"
-							data-tometrics={s.id}
-							onclick={(e) => toMetrics(e, s.id)}>metrics →</a
+					<Row>
+						<b>{s.title}</b>
+						<Text tone="dim">{s.id}</Text>
+						<Spacer />
+						<Text tone="dim" mono>~{fmtK(s.dumbZone!.degradedAtTokens ?? 0)} ctx</Text>
+						<Button variant="link" data-tometrics={s.id} onclick={() => toMetrics(s.id)}
+							>metrics →</Button
 						>
-					</div>
+					</Row>
 				</div>
 			{:else}
-				<div class="dim">none</div>
+				<Text tone="dim">none</Text>
 			{/each}
 		{:else}
 			{@const t = sc.themes.find((x) => x.id === st.themeSel)}
 			{#if !t}
-				<div class="muted">Select a pattern.</div>
+				<Text tone="muted">Select a pattern.</Text>
 			{:else}
 				{@const type = THEME_TYPE[t.id]}
 				<div class="idetail-head">
 					<h2 style="font-size:18px">{t.title}</h2>
-					<div class="muted" style="margin-top:2px">{t.synthesis}</div>
+					<Text tone="muted" style="display:block;margin-top:2px">{t.synthesis}</Text>
 					<ProvenanceStamp p={THEME_STAMP} />
 				</div>
 				<h3 class="dh">
@@ -115,28 +104,85 @@
 				{#each t.sessions as s (s.id)}
 					{@const rel = s.inferences.filter((i) => i.type === type)}
 					<div class="tsession">
-						<div class="row">
-							<b>{s.title}</b> <span class="dim">{s.id} · {s.tool}</span>
-							<span class="spacer" style="flex:1"></span>
-							<a
-								href="#"
-								class="metricslink"
-								data-tometrics={s.id}
-								onclick={(e) => toMetrics(e, s.id)}>metrics →</a
+						<Row>
+							<b>{s.title}</b>
+							<Text tone="dim">{s.id} · {s.tool}</Text>
+							<Spacer />
+							<Button variant="link" data-tometrics={s.id} onclick={() => toMetrics(s.id)}
+								>metrics →</Button
 							>
-						</div>
+						</Row>
 						{#if rel.length}
 							{#each rel as inf (inf.id)}
 								<InferenceCard inference={inf} />
 							{/each}
 						{:else}
-							<div class="dim" style="font-size:12px">
+							<Text tone="dim" style="display:block;font-size:12px">
 								matched on Signals — no per-turn Inference of this type
-							</div>
+							</Text>
 						{/if}
 					</div>
 				{/each}
 			{/if}
 		{/if}
-	</div>
-</div>
+	{/snippet}
+</MasterDetail>
+
+<style>
+	.listhead {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 8px 14px;
+		border-bottom: 1px solid var(--line);
+		font-size: 12px;
+		color: var(--muted);
+	}
+	.srow-top {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.stitle {
+		font-weight: 600;
+		font-size: 13px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.srow-sub {
+		font-size: 11.5px;
+		color: var(--dim);
+		margin-top: 3px;
+	}
+	.idetail-head {
+		border-bottom: 1px solid var(--line);
+		padding-bottom: 12px;
+		margin-bottom: 14px;
+	}
+	.dh {
+		font-size: 12px;
+		text-transform: uppercase;
+		letter-spacing: 0.6px;
+		color: var(--dim);
+		margin: 26px 0 12px;
+	}
+	.tsession {
+		border: 1px solid var(--line);
+		border-radius: 10px;
+		background: var(--panel);
+		padding: 12px 14px;
+		margin-bottom: 12px;
+	}
+	.tsession b {
+		color: var(--ink);
+	}
+	.tsession :global(.infcard) {
+		margin-top: 10px;
+		margin-bottom: 0;
+		background: var(--panel2);
+	}
+	.tsession :global(.infcard + .infcard) {
+		margin-top: 8px;
+	}
+</style>

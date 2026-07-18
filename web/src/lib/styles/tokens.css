@@ -1,0 +1,63 @@
+/* Design tokens — the single source of truth for visual decisions.
+   Imported once, globally, from the root +layout.svelte. Custom properties on
+   :root don't paint anything on their own; components opt in via var(--…), so
+   defining them app-wide is safe and leak-free. */
+:root {
+	/* ---- Surfaces & text ---- */
+	--bg: #0e1116;
+	--panel: #161b22;
+	--panel2: #1c232d;
+	--line: #2a323d;
+	--ink: #e6edf3;
+	--muted: #8b98a5;
+	--dim: #5c6773;
+
+	/* ---- Accents & status ---- */
+	--accent: #4c8dff;
+	--accent2: #7c5cff;
+	--good: #3fb950;
+	--warn: #d29922;
+	--bad: #f85149;
+
+	/* ---- Tool identity ---- */
+	--claude: #d97757;
+	--codex: #10a37f;
+	--pi: #a371f7;
+	/* Translucent tints for filled tool pills/badges. */
+	--claude-tint: rgba(217, 119, 87, 0.18);
+	--codex-tint: rgba(16, 163, 127, 0.18);
+	--pi-tint: rgba(163, 113, 247, 0.18);
+	--accent-tint: rgba(76, 141, 255, 0.16);
+	--warn-tint: rgba(226, 179, 65, 0.07);
+	--warn-line: rgba(226, 179, 65, 0.28);
+
+	/* ---- Radii ---- */
+	--radius-sm: 6px;
+	--radius: 12px;
+	--radius-pill: 20px;
+
+	/* ---- Spacing scale ---- */
+	--space-1: 4px;
+	--space-2: 6px;
+	--space-3: 8px;
+	--space-4: 10px;
+	--space-5: 12px;
+	--space-6: 16px;
+	--space-7: 22px;
+
+	/* ---- Typography ---- */
+	--mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+	--sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, system-ui, sans-serif;
+
+	/* ---- Focus ring (accessibility) ---- */
+	--focus-ring: var(--accent);
+	--focus-width: 2px;
+	--focus-offset: 2px;
+}
+
+/* Universal box model — the one legitimately global reset. */
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import './metrics-viewer.css';
 	import { ALL } from './data';
 	import { agg, filtered } from './aggregate';
 	import { provideViewerState } from './viewerState.svelte';
@@ -36,3 +35,20 @@
 		</div>
 	</div>
 </div>
+
+<style>
+	.mv {
+		color: var(--ink);
+		font-family: var(--sans);
+		background: var(--bg);
+	}
+	.app {
+		display: flex;
+		flex-direction: column;
+		min-height: 100%;
+	}
+	.main {
+		flex: 1;
+		padding: var(--space-7);
+	}
+</style>

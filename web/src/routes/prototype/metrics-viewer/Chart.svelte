@@ -43,3 +43,9 @@
 </script>
 
 <div bind:this={el} class="chart" style="height:{height}px"></div>
+
+<style>
+	.chart {
+		width: 100%;
+	}
+</style>

@@ -5,6 +5,7 @@
 	import { INSIGHT_VARIANTS } from './meta';
 	import { useViewerState } from './viewerState.svelte';
 	import { useVariants } from '$lib/prototype/variants.svelte';
+	import { Banner, Text, Spacer } from '$lib/ui';
 	import InsightDigest from './InsightDigest.svelte';
 	import InsightWorkbench from './InsightWorkbench.svelte';
 	import InsightExplorer from './InsightExplorer.svelte';
@@ -36,18 +37,18 @@
 </script>
 
 <div class="insights">
-	<div class="row nonauth-banner">
-		<span class="nonauth">⚠ Model-derived · non-authoritative</span>
-		<span class="dim">
+	<Banner tone="warn" class="insights-banner">
+		<Text tone="warn" class="lead">⚠ Model-derived · non-authoritative</Text>
+		<Text tone="dim">
 			The LLM pass over the same {f.length} filtered sessions — Signals remain the source of truth. Extractor
 			v{EXTRACTOR_V}.
-		</span>
-		<span class="spacer" style="flex:1"></span>
-		<span class="dim pmono">
+		</Text>
+		<Spacer />
+		<Text tone="dim" mono>
 			{sc.totalInf} inferences · ⤺{sc.byType['course-correction']} ⌇{sc.byType['input-noise']} ▽{sc
 				.byType['dumb-zone']}
-		</span>
-	</div>
+		</Text>
+	</Banner>
 	{#if variant === 'B'}
 		<InsightWorkbench {f} />
 	{:else if variant === 'C'}
@@ -56,3 +57,19 @@
 		<InsightDigest {f} {sc} />
 	{/if}
 </div>
+
+<style>
+	.insights {
+		/* Full-bleed like the other views; the cards below flow to fill the width. */
+		max-width: none;
+	}
+	.insights :global(.insights-banner) {
+		margin-bottom: 24px;
+	}
+	.insights :global(.lead) {
+		font-size: 11px;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+	}
+</style>

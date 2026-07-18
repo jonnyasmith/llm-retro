@@ -6,6 +6,7 @@
 	import { useViewerState } from './viewerState.svelte';
 	import Chart from './Chart.svelte';
 	import SessionDetail from './SessionDetail.svelte';
+	import { MasterDetail, SelectableRow, Badge, Spacer, Text } from '$lib/ui';
 
 	let { f, a }: { f: Session[]; a: Aggregate } = $props();
 
@@ -21,9 +22,9 @@
 	const selected = $derived(f.find((s) => s.id === st.selected) ?? null);
 </script>
 
-<div class="md">
-	<div class="md-list">
-		<div class="md-agg">
+<MasterDetail>
+	{#snippet list()}
+		<div class="agg">
 			<div>
 				<div class="k">Sessions</div>
 				<div class="v">{a.sessions}</div>
@@ -41,21 +42,19 @@
 				<div class="v">{fmtMin(Math.round(a.activeMs / 60000))}</div>
 			</div>
 		</div>
-		<div class="md-listhead">
-			<span>Session</span><span class="spacer" style="flex:1"></span><span>latency</span>
+		<div class="listhead">
+			<span>Session</span><Spacer /><span>latency</span>
 		</div>
-		<div class="md-rows">
+		<div class="rows">
 			{#each f as s (s.id)}
-				<div
-					class="srow"
-					class:sel={s.id === st.selected}
-					onclick={() => (st.selected = s.id)}
-					role="button"
-					tabindex="0"
+				<SelectableRow
+					layout="grid"
+					selected={s.id === st.selected}
+					onselect={() => (st.selected = s.id)}
 				>
 					<div>
 						<div class="top">
-							<span class="badge {s.tool}">{s.tool}</span>
+							<Badge tone={s.tool}>{s.tool}</Badge>
 							<span class="title">{s.title}</span>
 						</div>
 						<div class="meta">
@@ -67,15 +66,66 @@
 						</div>
 					</div>
 					<div class="spark"><Chart option={sparkOption(s)} height={26} /></div>
-				</div>
+				</SelectableRow>
 			{/each}
 		</div>
-	</div>
-	<div class="md-detail">
+	{/snippet}
+	{#snippet detail()}
 		{#if selected}
 			<SessionDetail session={selected} />
 		{:else}
-			<div class="muted">No session in scope.</div>
+			<Text tone="muted">No session in scope.</Text>
 		{/if}
-	</div>
-</div>
+	{/snippet}
+</MasterDetail>
+
+<style>
+	.agg {
+		padding: var(--space-5) var(--space-6);
+		border-bottom: 1px solid var(--line);
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: var(--space-3) var(--space-6);
+	}
+	.k {
+		font-size: 11px;
+		color: var(--dim);
+		text-transform: uppercase;
+		letter-spacing: 0.4px;
+	}
+	.v {
+		font-size: 17px;
+		font-weight: 700;
+	}
+	.listhead {
+		display: flex;
+		align-items: center;
+		gap: var(--space-3);
+		padding: var(--space-3) var(--space-6);
+		border-bottom: 1px solid var(--line);
+		font-size: 12px;
+		color: var(--muted);
+	}
+	.rows {
+		overflow-y: auto;
+		flex: 1;
+		max-height: 62vh;
+	}
+	.top {
+		display: flex;
+		align-items: center;
+		gap: var(--space-3);
+	}
+	.title {
+		font-weight: 600;
+		font-size: 13px;
+	}
+	.meta {
+		font-size: 11.5px;
+		color: var(--dim);
+	}
+	.spark {
+		width: 90px;
+		height: 26px;
+	}
+</style>

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { Row, Spacer, Text, Grid, Col, Card, CardTitle, CardHint, Badge, Button } from '$lib/ui';
+
 	type Job = { stage: string; title: string; desc: string; last: string; st: string };
 
 	const jobs: Job[] = [
@@ -44,43 +46,54 @@
 </script>
 
 <div style="max-width:1040px">
-	<div class="row" style="margin-bottom:6px">
-		<h2 style="color:var(--ink)">Jobs</h2>
-		<span class="spacer" style="flex:1"></span>
-		<button class="pill on" style="cursor:pointer">Run pipeline (import → analysis) →</button>
-	</div>
-	<p class="dim" style="margin-bottom:18px">
+	<Row style="margin-bottom:6px">
+		<h2 class="heading">Jobs</h2>
+		<Spacer />
+		<Button variant="pill">Run pipeline (import → analysis) →</Button>
+	</Row>
+	<Text tone="dim" style="display:block;margin:14px 0 18px">
 		Self-describing job containers discovered by label (#5). The web app is the control plane —
 		every run is an explicit action.
-	</p>
+	</Text>
 	{#each byStage as [name, list] (name)}
 		<div style="margin-bottom:22px">
-			<div
-				class="flabel"
-				style="margin-bottom:8px;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--dim)"
-			>
-				{name}
-			</div>
-			<div class="grid">
+			<div class="group-label">{name}</div>
+			<Grid cols={6}>
 				{#each list as j (j.title)}
-					<div class="col2">
-						<div class="card" style="min-height:120px">
-							<div class="row">
-								<h3 style="text-transform:none;color:var(--ink);font-size:14px">{j.title}</h3>
-								<span class="spacer" style="flex:1"></span>
-								<span class="badge" style="background:var(--panel2);color:var(--muted)">{j.st}</span
+					<Col span={2}>
+						<Card style="min-height:120px">
+							<Row>
+								<CardTitle style="text-transform:none;color:var(--ink);font-size:14px"
+									>{j.title}</CardTitle
 								>
-							</div>
-							<div class="hint">{j.desc}</div>
-							<div class="row" style="margin-top:auto">
-								<span class="dim" style="font-size:11.5px">last run: {j.last}</span>
-								<span class="spacer" style="flex:1"></span>
-								<button class="pill on" style="cursor:pointer">Trigger →</button>
-							</div>
-						</div>
-					</div>
+								<Spacer />
+								<Badge tone="neutral">{j.st}</Badge>
+							</Row>
+							<CardHint>{j.desc}</CardHint>
+							<Row style="margin-top:auto">
+								<Text tone="dim" style="font-size:11.5px">last run: {j.last}</Text>
+								<Spacer />
+								<Button variant="pill">Trigger →</Button>
+							</Row>
+						</Card>
+					</Col>
 				{/each}
-			</div>
+			</Grid>
 		</div>
 	{/each}
 </div>
+
+<style>
+	.heading {
+		margin: 0;
+		font-weight: 600;
+		color: var(--ink);
+	}
+	.group-label {
+		margin-bottom: 8px;
+		font-size: 11px;
+		text-transform: uppercase;
+		letter-spacing: 0.6px;
+		color: var(--dim);
+	}
+</style>

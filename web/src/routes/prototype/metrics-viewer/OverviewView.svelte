@@ -11,6 +11,19 @@
 		toolsOption
 	} from './charts';
 	import Chart from './Chart.svelte';
+	import {
+		Card,
+		CardTitle,
+		CardHint,
+		Grid,
+		Col,
+		Row,
+		Spacer,
+		Segmented,
+		Kpi,
+		Verdict,
+		Button
+	} from '$lib/ui';
 	import { useViewerState } from './viewerState.svelte';
 
 	let { f, a }: { f: Session[]; a: Aggregate } = $props();
@@ -22,8 +35,7 @@
 	const latOption = $derived(latencyHourOption(a, st.latencyMode));
 	const gaugeOpt = $derived(gaugeOption(stats.slower));
 
-	const openInsights = (e: MouseEvent) => {
-		e.preventDefault();
+	const openInsights = () => {
 		st.view = 'insights';
 	};
 </script>
@@ -35,74 +47,78 @@
 		is the honest test — it factors out "it simply wrote more."
 	</div>
 	<div class="heroband">
-		<div class="card">
-			<div class="row">
-				<h3>Latency by hour of day</h3>
-				<span class="spacer" style="flex:1"></span>
-				<div class="toggle">
-					<button
-						class={st.latencyMode === 'raw' ? 'on' : ''}
-						onclick={() => (st.latencyMode = 'raw')}>avg latency</button
-					>
-					<button
-						class={st.latencyMode === 'perToken' ? 'on' : ''}
-						onclick={() => (st.latencyMode = 'perToken')}>per output-token</button
-					>
-				</div>
-			</div>
+		<Card>
+			<Row>
+				<CardTitle>Latency by hour of day</CardTitle>
+				<Spacer />
+				<Segmented
+					variant="inset"
+					label="Latency mode"
+					options={[
+						{ value: 'raw', label: 'avg latency' },
+						{ value: 'perToken', label: 'per output-token' }
+					]}
+					value={st.latencyMode}
+					onchange={(v) => (st.latencyMode = v)}
+				/>
+			</Row>
 			<Chart option={latOption} height={300} />
-		</div>
-		<div class="card">
-			<h3>PM vs rest (per-token)</h3>
-			<div class="kpi {stats.slower > 0 ? 'delta up' : 'delta down'}">
+		</Card>
+		<Card>
+			<CardTitle>PM vs rest (per-token)</CardTitle>
+			<Kpi delta={stats.slower > 0 ? 'up' : 'down'}>
 				{stats.slower > 0 ? '+' : ''}{stats.slower.toFixed(0)}%
-			</div>
-			<div class="hint">
+			</Kpi>
+			<CardHint>
 				13:00–17:00 rate vs the rest of the day. {stats.afternoon.toFixed(2)} vs {stats.rest.toFixed(
 					2
 				)} ms/token.
-			</div>
+			</CardHint>
 			<Chart option={gaugeOpt} height={150} />
-		</div>
+		</Card>
 	</div>
-	<div class="verdict">
-		<span class="lbl">Reads as →</span> Afternoon per-token latency runs
+	<Verdict label="Reads as →">
+		Afternoon per-token latency runs
 		<b>{stats.slower.toFixed(0)}% higher</b> in scope.
-		<a href="#" data-toretro onclick={openInsights}>Open in Insights →</a>
-	</div>
+		<Button variant="link" data-toretro onclick={openInsights}>Open in Insights →</Button>
+	</Verdict>
 </section>
 <section class="section" id="q2">
 	<div class="q">Where do my tokens go?</div>
 	<div class="sub">
 		Model mix and the subagent share of the whole tree — what's actually consuming the budget.
 	</div>
-	<div class="grid">
-		<div class="card col3">
-			<h3>By model</h3>
-			<Chart option={modelMixOption(a)} height={260} />
-		</div>
-		<div class="card col3">
-			<h3>Root vs subagent tokens</h3>
-			<Chart option={subagentShareOption(a)} height={260} />
-			<div class="hint">{a.subCount} child sessions · {fmtK(a.subTokens)} tok delegated</div>
-		</div>
-	</div>
-	<div class="verdict">
-		<span class="lbl">Reads as →</span> Subagents carry
+	<Grid cols={6}>
+		<Col span={3}>
+			<Card>
+				<CardTitle>By model</CardTitle>
+				<Chart option={modelMixOption(a)} height={260} />
+			</Card>
+		</Col>
+		<Col span={3}>
+			<Card>
+				<CardTitle>Root vs subagent tokens</CardTitle>
+				<Chart option={subagentShareOption(a)} height={260} />
+				<CardHint>{a.subCount} child sessions · {fmtK(a.subTokens)} tok delegated</CardHint>
+			</Card>
+		</Col>
+	</Grid>
+	<Verdict label="Reads as →">
+		Subagents carry
 		<b>{a.totalTokens ? Math.round((a.subTokens / a.totalTokens) * 100) : 0}%</b> of tokens.
-		<a href="#" data-toretro onclick={openInsights}>See delegation retro →</a>
-	</div>
+		<Button variant="link" data-toretro onclick={openInsights}>See delegation retro →</Button>
+	</Verdict>
 </section>
 <section class="section" id="q3">
 	<div class="q">What shape are my sessions?</div>
 	<div class="sub">
 		Duration vs turns — many short loops or few long grinds? Not a quality headline, a shape axis.
 	</div>
-	<div class="card">
-		<div class="row">
-			<h3 style="text-transform:none;color:var(--muted)">Duration vs turns</h3>
+	<Card>
+		<Row>
+			<CardTitle style="text-transform:none">Duration vs turns</CardTitle>
 			<span class="drilltip" style="margin-left:auto">click a point → open that session</span>
-		</div>
+		</Row>
 		<Chart
 			option={durationVsTurnsOption(f)}
 			height={320}
@@ -111,18 +127,46 @@
 				st.view = 'sessions';
 			}}
 		/>
-	</div>
-	<div class="verdict">
-		<span class="lbl">Reads as →</span>
+	</Card>
+	<Verdict label="Reads as →">
 		{fmtMin(Math.round(a.durationMin / Math.max(a.sessions, 1)))} median wall per session,
 		<b>{Math.round(a.turns / Math.max(a.sessions, 1))} turns</b> avg.
-		<a href="#" data-toretro onclick={openInsights}>Loop discipline in Insights →</a>
-	</div>
+		<Button variant="link" data-toretro onclick={openInsights}>Loop discipline in Insights →</Button
+		>
+	</Verdict>
 </section>
 <section class="section" id="q4">
 	<div class="q">What's my tooling footprint?</div>
 	<div class="sub">Which tools the models reach for, across scope.</div>
-	<div class="card">
+	<Card>
 		<Chart option={toolsOption(a)} height={260} />
-	</div>
+	</Card>
 </section>
+
+<style>
+	.section {
+		margin-bottom: 44px;
+		scroll-margin-top: 130px;
+	}
+	.q {
+		font-size: 22px;
+		font-weight: 700;
+		letter-spacing: -0.3px;
+		margin-bottom: 4px;
+	}
+	.sub {
+		color: var(--muted);
+		margin-bottom: 16px;
+		max-width: 720px;
+	}
+	.heroband {
+		display: grid;
+		grid-template-columns: 2fr 1fr;
+		gap: var(--space-6);
+	}
+	.drilltip {
+		color: var(--dim);
+		font-size: 11.5px;
+		font-style: italic;
+	}
+</style>

@@ -4,6 +4,7 @@
 	import { latencyHourOption, modelMixOption, toolsOption } from './charts';
 	import { useViewerState } from './viewerState.svelte';
 	import Chart from './Chart.svelte';
+	import { Row, Spacer, Segmented, Badge, Card, CardTitle, Kpi, CardHint, Text } from '$lib/ui';
 
 	let { session }: { session: Session } = $props();
 
@@ -14,80 +15,103 @@
 	const latOption = $derived(latencyHourOption(A, st.latencyMode));
 </script>
 
-<div class="row">
-	<span class="badge {session.tool}">{session.tool}</span>
+<Row>
+	<Badge tone={session.tool}>{session.tool}</Badge>
 	<h2 style="font-size:19px">{session.title}</h2>
-	<span class="spacer" style="flex:1"></span>
-	<div class="viewtabs">
-		<button class="on">Metrics</button>
-		<button onclick={() => (st.view = 'insights')}>Open in Insights</button>
-	</div>
-</div>
-<div class="muted" style="margin-top:4px">
+	<Spacer />
+	<Segmented
+		variant="inset"
+		label="Session view"
+		options={[
+			{ value: 'metrics', label: 'Metrics' },
+			{ value: 'insights', label: 'Open in Insights' }
+		]}
+		value="metrics"
+		onchange={(v) => {
+			if (v === 'insights') st.view = 'insights';
+		}}
+	/>
+</Row>
+<Text tone="muted" style="display:block;margin-top:4px">
 	{session.id} · {session.start.toISOString().replace('T', ' ').slice(0, 16)} UTC · {session.kind}{session.kind ===
 		'root' && session.subagents.count
 		? ` · ${session.subagents.count} subagents`
 		: ''}
-</div>
+</Text>
 <div class="detail-grid">
-	<div class="card">
-		<h3>Turn count</h3>
-		<div class="kpi">{session.turns}<small>turns</small></div>
-	</div>
-	<div class="card">
-		<h3>
+	<Card>
+		<CardTitle>Turn count</CardTitle>
+		<Kpi unit="turns">{session.turns}</Kpi>
+	</Card>
+	<Card>
+		<CardTitle>
 			Token usage · {#if session.tokens.basis === 'reconstructed'}<span
 					class="basis-recon"
 					title="Reconstructed by diffing — not exact">reconstructed</span
 				>{:else}exact{/if}
-		</h3>
-		<div class="kpi">{fmtK(tt)}</div>
-		<div class="hint">
+		</CardTitle>
+		<Kpi>{fmtK(tt)}</Kpi>
+		<CardHint>
 			in {fmtK(session.tokens.in)} · out {fmtK(session.tokens.out)} · cache {fmtK(
 				session.tokens.cache
 			)}
-		</div>
-	</div>
-	<div class="card">
-		<h3>Duration</h3>
-		<div class="kpi">{fmtMin(session.durationMin)}</div>
-		<div class="hint">
+		</CardHint>
+	</Card>
+	<Card>
+		<CardTitle>Duration</CardTitle>
+		<Kpi>{fmtMin(session.durationMin)}</Kpi>
+		<CardHint>
 			active {fmtMin(Math.round(session.activeMs / 60000))} ({Math.round(
 				(session.activeMs / 60000 / session.durationMin) * 100
 			)}% of wall)
-		</div>
-	</div>
-	<div class="card">
-		<h3>Subagent usage</h3>
-		<div class="kpi">{session.subagents.count}<small>children</small></div>
-		<div class="hint">
+		</CardHint>
+	</Card>
+	<Card>
+		<CardTitle>Subagent usage</CardTitle>
+		<Kpi unit="children">{session.subagents.count}</Kpi>
+		<CardHint>
 			{fmtK(session.subagents.tokens)} tok · {tt
 				? Math.round((session.subagents.tokens / (tt + session.subagents.tokens)) * 100)
 				: 0}% of tree
-		</div>
-	</div>
-	<div class="card">
-		<h3>Model mix</h3>
+		</CardHint>
+	</Card>
+	<Card>
+		<CardTitle>Model mix</CardTitle>
 		<Chart option={modelMixOption(A)} height={180} />
-	</div>
-	<div class="card">
-		<h3>Tool usage</h3>
+	</Card>
+	<Card>
+		<CardTitle>Tool usage</CardTitle>
 		<Chart option={toolsOption(A)} height={180} />
-	</div>
-	<div class="card" style="grid-column:span 2">
-		<div class="row">
-			<h3>Response latency by hour</h3>
-			<span class="spacer" style="flex:1"></span>
-			<div class="toggle">
-				<button class:on={st.latencyMode === 'raw'} onclick={() => (st.latencyMode = 'raw')}
-					>avg latency</button
-				>
-				<button
-					class:on={st.latencyMode === 'perToken'}
-					onclick={() => (st.latencyMode = 'perToken')}>per output-token</button
-				>
-			</div>
-		</div>
+	</Card>
+	<Card style="grid-column:span 2">
+		<Row>
+			<CardTitle>Response latency by hour</CardTitle>
+			<Spacer />
+			<Segmented
+				variant="inset"
+				label="Latency mode"
+				options={[
+					{ value: 'raw', label: 'avg latency' },
+					{ value: 'perToken', label: 'per output-token' }
+				]}
+				value={st.latencyMode}
+				onchange={(v) => (st.latencyMode = v)}
+			/>
+		</Row>
 		<Chart option={latOption} height={200} />
-	</div>
+	</Card>
 </div>
+
+<style>
+	.detail-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 14px;
+		margin-top: 14px;
+	}
+	.basis-recon {
+		color: var(--warn);
+		border-bottom: 1px dashed var(--warn);
+		cursor: help;
+	}
+</style>
