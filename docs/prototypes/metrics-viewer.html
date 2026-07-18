@@ -13,11 +13,13 @@
   Chosen design: single header nav — Overview | Sessions | Insights | Jobs.
   · Overview — question-driven metrics layout (latency hero); session-shape scatter drills to Sessions.
   · Sessions — master-detail per-session Signal breakdown; links across to Insights.
-  · Insights (#8) — the LLM Inference layer over the same filtered set: thematic synthesis
-    (drills to sessions), deterministic dumb-zone aggregate threshold, and per-session
-    Inferences (course-corrections, input-noise waste, dumb-zone) each linked back to the
-    exact Turn/Message with a provenance stamp + non-authoritative marker. "View metrics →"
-    cross-links to Sessions — same dataset, sibling surfaces.
+  · Insights (#8) — the LLM Inference layer over the same filtered set. THREE variants to
+    choose from via the in-page Layout switch (?insight=A|B|C), all over the same data:
+      A · Digest — opinionated retro report: headline findings, ranked themes, dumb-zone chart.
+      B · Workbench — session-first annotated transcript; each Inference sits inline on its Turn.
+      C · Explorer — theme/pattern-first; drill a pattern to its supporting per-session evidence.
+    Every variant shows the Inference contract (refs back to Turn/Message, evidence excerpt,
+    provenance stamp + non-authoritative marker) and cross-links to Sessions via "View metrics →".
   · Jobs (#5) — control-plane stub.
   Filters + view persist via ?view=. All mock data, in-memory, no persistence.
   (Earlier A/B/C/S metrics layout variants live in this branch's git history.)
@@ -192,6 +194,39 @@
   .fix s { color: var(--dim); }
   .conf { font-family: var(--mono); font-size: 11px; color: var(--dim); }
   .evref { font-family: var(--mono); font-size: 11.5px; font-weight: 600; }
+  /* insight variant switcher */
+  .iswitch { display: flex; align-items: center; gap: 8px; margin-bottom: 22px; }
+  .iswitch .pill { cursor: pointer; }
+  .ivardesc { margin-left: 4px; font-size: 12px; }
+  .dh { font-size: 12px; text-transform: uppercase; letter-spacing: .6px; color: var(--dim); margin: 26px 0 12px; }
+  /* A — digest */
+  .digest { max-width: 900px; }
+  .findgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
+  .findcard { border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0; background: var(--panel); padding: 12px 14px; }
+  .findk { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 5px; }
+  .findb { font-size: 13px; color: var(--muted); }
+  .findb b { color: var(--ink); }
+  .tlist { display: flex; flex-direction: column; gap: 14px; }
+  .tlrow { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 12px 14px; }
+  .tlrow b { color: var(--ink); }
+  /* B — workbench thread */
+  .thread { position: relative; padding-left: 4px; }
+  .tgap { color: var(--dim); font-size: 11.5px; font-style: italic; margin: 6px 0 6px 76px; }
+  .tturn { display: grid; grid-template-columns: 72px 1fr; gap: 12px; margin-bottom: 14px; scroll-margin-top: 130px; }
+  .tnum { font-size: 12px; font-weight: 700; color: var(--muted); text-align: right; padding-top: 6px; }
+  .tref { color: var(--dim); font-weight: 400; font-size: 10px; margin-top: 2px; }
+  .tbody { min-width: 0; }
+  .tmsg { font-size: 12.5px; padding: 6px 10px; border-radius: 8px; margin-bottom: 5px; }
+  .tmsg.user { background: var(--panel2); color: var(--ink); }
+  .tmsg.ai { background: transparent; border: 1px dashed var(--line); }
+  .tmsg .who { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--dim); margin-right: 6px; }
+  .annot { border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0; background: var(--panel); padding: 10px 12px; margin-top: 6px; }
+  /* C — explorer */
+  #iThemes .srow { display: block; }
+  .tsession { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 12px 14px; margin-bottom: 12px; }
+  .tsession b { color: var(--ink); }
+  .tsession .infcard { margin-top: 10px; margin-bottom: 0; background: var(--panel2); }
+  .tsession .infcard + .infcard { margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -368,7 +403,9 @@ const state = {
   models: new Set(),           // empty = all
   days: 21,
   selected: ALL[0].id,         // variant B detail
-  insightSel: null,            // insights master-detail selection
+  insightSel: null,            // insights per-session selection
+  insightVariant: "A",         // A digest | B workbench | C explorer
+  themeSel: null,              // insights explorer theme selection
   latencyMode: "raw",          // raw | perToken
 };
 
@@ -578,16 +615,29 @@ function infCard(i) {
       ${i.degradedAtTokens ? `<span class="spacer" style="flex:1"></span><span class="dim pmono">degraded @ ~${fmtK(i.degradedAtTokens)} ctx tokens</span>` : ""}</div>
     ${provStamp(i.provenance)}</div>`;
 }
-function insightsBody(f) {
-  const dza = dumbZoneAggregate(f);
-  const themes = THEMES.map(t => ({ ...t, sessions: f.filter(t.match) })).filter(t => t.sessions.length);
+const IVAR = {
+  A: ["Digest",    "Opinionated retro report — headline findings first, least interactive."],
+  B: ["Workbench", "Session-first: annotated transcript, evidence attached to the Turn."],
+  C: ["Explorer",  "Theme-first: patterns as primary objects, drill to their evidence."],
+};
+const THEME_TYPE = { T1: "course-correction", T2: "dumb-zone", T3: "input-noise", T4: "course-correction" };
+function iScope(f) {
   const totalInf = f.reduce((n, s) => n + s.inferences.length, 0);
   const byType = { "course-correction": 0, "input-noise": 0, "dumb-zone": 0 };
   f.forEach(s => s.inferences.forEach(i => byType[i.type]++));
-  const sel = f.find(s => s.id === state.insightSel);
-  // left rail — sessions ranked by inference count
-  const listed = [...f].sort((a, b) => b.inferences.length - a.inferences.length);
-  const rail = listed.map(s => {
+  const themes = THEMES.map(t => ({ ...t, sessions: f.filter(t.match) })).filter(t => t.sessions.length);
+  return { totalInf, byType, themes, dza: dumbZoneAggregate(f) };
+}
+function insightHead(f, sc) {
+  const seg = Object.entries(IVAR).map(([k, [name]]) =>
+    `<button class="pill ${state.insightVariant === k ? "on" : ""}" data-ivar="${k}">${name}</button>`).join("");
+  return `<div class="row nonauth-banner"><span class="nonauth">⚠ Model-derived · non-authoritative</span>
+      <span class="dim">The LLM pass over the same ${f.length} filtered sessions — Signals remain the source of truth. Extractor v${EXTRACTOR_V}.</span>
+      <span class="spacer" style="flex:1"></span><span class="dim pmono">${sc.totalInf} inferences · ⤺${sc.byType["course-correction"]} ⌇${sc.byType["input-noise"]} ▽${sc.byType["dumb-zone"]}</span></div>
+    <div class="iswitch"><span class="flabel">Layout</span>${seg}<span class="dim ivardesc">${IVAR[state.insightVariant][1]}</span></div>`;
+}
+function iRail(f) {
+  return [...f].sort((a, b) => b.inferences.length - a.inferences.length).map(s => {
     const counts = { "course-correction": 0, "input-noise": 0, "dumb-zone": 0 };
     s.inferences.forEach(i => counts[i.type]++);
     const dots = Object.entries(counts).filter(([, n]) => n).map(([t, n]) =>
@@ -596,51 +646,125 @@ function insightsBody(f) {
       <div class="srow-top"><span class="badge ${s.tool}">${s.tool}</span><span class="stitle">${s.title}</span></div>
       <div class="srow-sub">${s.id} · ${s.turns} turns · ${dots || '<span class="dim">no inferences</span>'}</div></div>`;
   }).join("");
-  const themeCards = themes.map(t => `
-    <div class="col2"><div class="card themecard" data-theme="${t.id}">
-      <div class="row"><h3 class="thtitle">${t.title}</h3></div>
+}
+function insightsBody(f) {
+  const sc = iScope(f);
+  const v = state.insightVariant;
+  const body = v === "B" ? insightWorkbench(f, sc) : v === "C" ? insightExplorer(f, sc) : insightDigest(f, sc);
+  return `<div class="insights">${insightHead(f, sc)}${body}</div>`;
+}
+
+/* ---- Variant A: DIGEST — opinionated report, findings first ---- */
+function insightDigest(f, sc) {
+  const topTheme = [...sc.themes].sort((a, b) => b.sessions.length - a.sessions.length)[0];
+  const mostCC = [...f].map(s => [s, s.inferences.filter(i => i.type === "course-correction").length])
+    .sort((a, b) => b[1] - a[1])[0];
+  const noiseS = f.find(s => s.inferences.some(i => i.type === "input-noise"));
+  const find = (icon, color, kicker, body) => `<div class="findcard" style="border-left-color:${color}">
+    <div class="findk" style="color:${color}">${icon} ${kicker}</div><div class="findb">${body}</div></div>`;
+  const findings = [
+    topTheme && find("◆", "#4c8dff", "Dominant pattern",
+      `<b>${topTheme.title}</b> — ${topTheme.sessions.length} sessions. ${topTheme.synthesis}`),
+    sc.dza.threshold && find("▽", "#e06c75", "Quality cliff",
+      `Output degrades past <b>~${fmtK(sc.dza.threshold)}</b> context tokens (median of ${sc.dza.detected}/${sc.dza.total} sessions where degradation showed). Split long loops sooner.`),
+    mostCC && mostCC[1] > 0 && find("⤺", "#e2b341", "Most redirected",
+      `<b>${mostCC[0].title}</b> (${mostCC[0].id}) took <b>${mostCC[1]}</b> course-corrections to keep on track. <a href="#" data-jump="${mostCC[0].id}">See the turns →</a>`),
+    noiseS && find("⌇", "#c678dd", "Input-noise waste",
+      `Garbled prompts cost turns in ${sc.byType["input-noise"]} places — e.g. <b>${noiseS.id}</b>. <a href="#" data-jump="${noiseS.id}">See where →</a>`),
+  ].filter(Boolean).join("");
+  const themeList = sc.themes.map(t => `<div class="tlrow">
+      <div class="row"><b>${t.title}</b><span class="spacer" style="flex:1"></span><span class="dim pmono">${t.sessions.length} sessions</span></div>
       <div class="hint">${t.synthesis}</div>
-      <div class="chips">${t.sessions.slice(0, 8).map(s => `<span class="chip" data-jump="${s.id}">${s.id}</span>`).join("")}${t.sessions.length > 8 ? `<span class="chip more">+${t.sessions.length - 8}</span>` : ""}</div>
-      ${provStamp(THEME_STAMP)}</div></div>`).join("");
-  return `<div class="insights">
-    <div class="row nonauth-banner"><span class="nonauth">⚠ Model-derived · non-authoritative</span>
-      <span class="dim">Inferences are the LLM pass over the same ${f.length} filtered sessions — Signals remain the source of truth. Extractor v${EXTRACTOR_V}.</span>
-      <span class="spacer" style="flex:1"></span><span class="dim pmono">${totalInf} inferences · ⤺${byType["course-correction"]} ⌇${byType["input-noise"]} ▽${byType["dumb-zone"]}</span></div>
+      <div class="chips">${t.sessions.slice(0, 10).map(s => `<span class="chip" data-jump="${s.id}">${s.id}</span>`).join("")}${t.sessions.length > 10 ? `<span class="chip more">+${t.sessions.length - 10}</span>` : ""}</div></div>`).join("");
+  return `<div class="digest">
+    <div class="row"><h2>Retro digest</h2><span class="spacer" style="flex:1"></span>
+      <button class="pill on" style="cursor:pointer">↻ Regenerate synthesis</button></div>
+    <p class="qsub">A generated read of this scope. Chips jump into the Workbench for the evidence.</p>
+    <div class="findgrid">${findings}</div>
+    <h3 class="dh">Themes</h3><div class="tlist">${themeList || '<div class="dim">No themes for this scope.</div>'}</div>
+    <h3 class="dh">Dumb-zone aggregate <span class="dim" style="font-weight:400">· deterministic</span></h3>
+    <div class="chart" id="cI_dz" style="height:210px"></div>
+    ${provStamp(THEME_STAMP)}</div>`;
+}
 
-    <section class="section" id="i1">
-      <h2>What patterns cut across my sessions?</h2>
-      <p class="qsub">Thematic synthesis — a map-reduce over the <b>structured layer</b> (Signals + per-session Inferences), never raw transcripts. Themes drill to the sessions behind them.</p>
-      <div class="grid">${themeCards || '<div class="dim">No themes for this scope.</div>'}</div>
-    </section>
-
-    <section class="section" id="i2">
-      <h2>Where does quality fall off a cliff?</h2>
-      <p class="qsub">Dumb-zone aggregate — a <b>deterministic</b> distribution over per-session degradation points (no 2nd model pass).</p>
-      <div class="chart" id="cI_dz" style="height:230px"></div>
-      <div class="verdict"><span class="lbl">Reads as →</span> ${dza.threshold ? `Quality tends to degrade past <b>~${fmtK(dza.threshold)}</b> context tokens — median of <b>${dza.detected}/${dza.total}</b> sessions where degradation was detected.` : "No degradation detected in this scope."}</div>
-    </section>
-
-    <section class="section" id="i3">
-      <h2>What happened inside a session?</h2>
-      <p class="qsub">Per-session Inferences over the raw transcript, each linked back to the exact Turn/Message it judged.</p>
-      <div class="md">
-        <div class="md-list" id="iList">${rail}</div>
-        <div class="md-detail" id="iDetail">${renderInsightDetail(sel)}</div>
-      </div>
-    </section>
-  </div>`;
+/* ---- Variant B: WORKBENCH — session-first annotated transcript ---- */
+function insightWorkbench(f, sc) {
+  const sel = f.find(s => s.id === state.insightSel);
+  return `<div class="md">
+      <div class="md-list" id="iList">${iRail(f)}</div>
+      <div class="md-detail" id="iDetail">${renderInsightDetail(sel)}</div>
+    </div>`;
 }
 function renderInsightDetail(s) {
   if (!s) return `<div class="muted">No session in scope.</div>`;
-  const infs = [...s.inferences].sort((a, b) => a.turnRef - b.turnRef);
-  const ruler = infs.map(i => `<span class="rdot" style="left:${(i.turnRef / s.turns * 100).toFixed(1)}%;background:${INFMETA[i.type].color}" title="Turn ${i.turnRef}: ${INFMETA[i.type].label}"></span>`).join("");
   return `<div class="idetail-head">
       <div class="row"><h2 style="font-size:18px">${s.title}</h2><span class="spacer" style="flex:1"></span>
         <a href="#" class="metricslink" data-tometrics="${s.id}">View metrics →</a></div>
       <div class="muted" style="margin-top:2px">${s.id} · ${s.tool} · ${s.dominantModel} · <b>${s.turns}</b> turns · ${fmtK(s.tokens.in + s.tokens.out)} tokens · ${fmtMin(s.durationMin)}</div>
-      <div class="ruler" title="Turn timeline — markers show where Inferences landed"><div class="rline"></div>${ruler}<span class="rend">${s.turns}</span></div>
     </div>
-    ${infs.length ? infs.map(infCard).join("") : '<div class="muted" style="padding:18px 0">No Inferences — the model flagged nothing in this session.</div>'}`;
+    <div class="thread">${turnThread(s)}</div>`;
+}
+function turnThread(s) {
+  const infs = [...s.inferences].sort((a, b) => a.turnRef - b.turnRef);
+  if (!infs.length) return '<div class="muted" style="padding:18px 0">No Inferences — the model flagged nothing in this session.</div>';
+  return infs.map((i, idx) => {
+    const m = INFMETA[i.type];
+    const gapN = idx === 0 ? i.turnRef - 1 : i.turnRef - infs[idx - 1].turnRef - 1;
+    const gap = gapN > 0 ? `<div class="tgap">⋯ ${gapN} turn${gapN > 1 ? "s" : ""} without a flag</div>` : "";
+    return `${gap}<div class="tturn" id="turn-${i.turnRef}">
+      <div class="tnum">Turn ${i.turnRef}<div class="tref pmono">${i.messageRef}</div></div>
+      <div class="tbody">
+        <div class="tmsg user"><span class="who">you</span> ${i.evidence}</div>
+        <div class="tmsg ai"><span class="who">${s.dominantModel}</span> <span class="dim">…the response you then redirected…</span></div>
+        <div class="annot" style="border-left-color:${m.color}">
+          <div class="row"><span class="itag" style="color:${m.color}">${m.icon} ${m.label}</span>
+            <span class="spacer" style="flex:1"></span><span class="conf">conf ${(i.confidence*100).toFixed(0)}%</span></div>
+          <div class="isum">${i.summary}</div>
+          ${i.correctedTo ? `<div class="fix">heard <s>${i.evidence}</s> → meant <b>${i.correctedTo}</b></div>` : ""}
+          ${i.degradedAtTokens ? `<div class="dim pmono">degraded @ ~${fmtK(i.degradedAtTokens)} ctx tokens</div>` : ""}
+          ${provStamp(i.provenance)}</div>
+      </div></div>`;
+  }).join("");
+}
+
+/* ---- Variant C: EXPLORER — theme-first, drill to supporting evidence ---- */
+function insightExplorer(f, sc) {
+  const items = [...sc.themes.map(t => ({ id: t.id, title: t.title, n: t.sessions.length })),
+                 { id: "DZ", title: "Dumb-zone threshold", n: sc.dza.detected }];
+  const list = items.map(it => `<div class="srow ${state.themeSel === it.id ? "sel" : ""}" data-theme="${it.id}">
+      <div class="srow-top"><span class="stitle">${it.title}</span></div>
+      <div class="srow-sub">${it.id === "DZ" ? "deterministic aggregate" : "thematic synthesis"} · ${it.n} sessions</div></div>`).join("");
+  return `<div class="md">
+      <div class="md-list" id="iThemes"><div class="md-listhead"><span>Pattern</span></div>${list}</div>
+      <div class="md-detail" id="iDetail">${themeDetail(f, sc)}</div>
+    </div>`;
+}
+function themeDetail(f, sc) {
+  const tid = state.themeSel;
+  if (tid === "DZ") {
+    const dza = sc.dza;
+    const rows = f.filter(s => s.dumbZone).sort((a, b) => a.dumbZone.degradedAtTokens - b.dumbZone.degradedAtTokens)
+      .map(s => `<div class="tsession"><div class="row"><b>${s.title}</b> <span class="dim">${s.id}</span>
+        <span class="spacer" style="flex:1"></span><span class="dim pmono">~${fmtK(s.dumbZone.degradedAtTokens)} ctx</span>
+        <a href="#" class="metricslink" data-tometrics="${s.id}">metrics →</a></div></div>`).join("");
+    return `<div class="idetail-head"><h2 style="font-size:18px">Dumb-zone threshold</h2>
+        <div class="muted" style="margin-top:2px">Deterministic — distribution over per-session degradation points, no 2nd model pass.</div></div>
+      <div class="chart" id="cI_dz" style="height:220px"></div>
+      <div class="verdict"><span class="lbl">Reads as →</span> ${dza.threshold ? `Quality degrades past <b>~${fmtK(dza.threshold)}</b> context tokens — median of <b>${dza.detected}/${dza.total}</b> sessions.` : "No degradation detected."}</div>
+      <h3 class="dh">Sessions behind it</h3>${rows || '<div class="dim">none</div>'}`;
+  }
+  const t = sc.themes.find(x => x.id === tid);
+  if (!t) return `<div class="muted">Select a pattern.</div>`;
+  const type = THEME_TYPE[tid];
+  const groups = t.sessions.map(s => {
+    const rel = s.inferences.filter(i => i.type === type);
+    return `<div class="tsession"><div class="row"><b>${s.title}</b> <span class="dim">${s.id} · ${s.tool}</span>
+        <span class="spacer" style="flex:1"></span><a href="#" class="metricslink" data-tometrics="${s.id}">metrics →</a></div>
+      ${rel.map(infCard).join("") || '<div class="dim" style="font-size:12px">matched on Signals — no per-turn Inference of this type</div>'}</div>`;
+  }).join("");
+  return `<div class="idetail-head"><h2 style="font-size:18px">${t.title}</h2>
+      <div class="muted" style="margin-top:2px">${t.synthesis}</div>${provStamp(THEME_STAMP)}</div>
+    <h3 class="dh">${t.sessions.length} sessions · supporting ${INFMETA[type].label.toLowerCase()} evidence</h3>${groups}`;
 }
 function jobsBody() {
   const jobs = [
@@ -832,19 +956,29 @@ function pageInsights() {
   const f = filtered();
   const richest = [...f].sort((a, b) => b.inferences.length - a.inferences.length)[0];
   if (!f.find(s => s.id === state.insightSel)) state.insightSel = (richest || f[0] || {}).id;
+  const themes = THEMES.map(t => ({ ...t, sessions: f.filter(t.match) })).filter(t => t.sessions.length);
+  const themeIds = [...themes.map(t => t.id), "DZ"];
+  if (!themeIds.includes(state.themeSel)) state.themeSel = themeIds[0];
   document.getElementById("app").innerHTML = chrome(insightsBody(f));
   wireChrome();
   wireInsights(f);
 }
 function wireInsights(f) {
   const dza = dumbZoneAggregate(f);
-  if (dza.points.length) chartDumbZone(byId("cI_dz"), dza);
-  else if (byId("cI_dz")) byId("cI_dz").innerHTML = '<div class="muted" style="padding:24px">No degradation detected in this scope.</div>';
+  if (byId("cI_dz")) {
+    if (dza.points.length) chartDumbZone(byId("cI_dz"), dza);
+    else byId("cI_dz").innerHTML = '<div class="muted" style="padding:24px">No degradation detected in this scope.</div>';
+  }
+  document.querySelectorAll("[data-ivar]").forEach(b =>
+    b.onclick = () => { state.insightVariant = b.dataset.ivar; render(); });
   document.querySelectorAll("#iList .srow").forEach(r =>
     r.onclick = () => { state.insightSel = r.dataset.isel; render(); });
+  document.querySelectorAll("#iThemes .srow").forEach(r =>
+    r.onclick = () => { state.themeSel = r.dataset.theme; render(); });
   document.querySelectorAll("[data-jump]").forEach(c =>
-    c.onclick = () => { state.insightSel = c.dataset.jump; render();
-      document.getElementById("i3")?.scrollIntoView({ behavior: "smooth", block: "start" }); });
+    c.onclick = e => { e.preventDefault(); state.insightSel = c.dataset.jump; state.insightVariant = "B"; render(); });
+  document.querySelectorAll(".evref[data-turn]").forEach(a =>
+    a.onclick = e => { e.preventDefault(); document.getElementById("turn-" + a.dataset.turn)?.scrollIntoView({ behavior: "smooth", block: "center" }); });
   document.querySelectorAll("[data-tometrics]").forEach(el =>
     el.onclick = e => { e.preventDefault(); state.selected = el.dataset.tometrics; state.view = "sessions"; render(); });
 }
@@ -880,6 +1014,8 @@ function wireChrome() {
 const PAGES = { overview: pageOverview, sessions: pageSessions, insights: pageInsights, jobs: pageJobs };
 function syncURL() {
   const u = new URL(location); u.searchParams.set("view", state.view);
+  if (state.view === "insights") u.searchParams.set("insight", state.insightVariant);
+  else u.searchParams.delete("insight");
   history.replaceState(null, "", u);
 }
 function render() {
@@ -887,8 +1023,11 @@ function render() {
   (PAGES[state.view] || pageOverview)();
   syncURL();
 }
-const v0 = new URLSearchParams(location.search).get("view");
+const q0 = new URLSearchParams(location.search);
+const v0 = q0.get("view");
 if (v0 && PAGES[v0]) state.view = v0;
+const i0 = q0.get("insight");
+if (i0 && IVAR[i0]) state.insightVariant = i0;
 render();
 </script>
 </body>
