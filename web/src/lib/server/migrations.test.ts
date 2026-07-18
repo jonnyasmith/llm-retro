@@ -80,11 +80,11 @@ describe('migration runner', () => {
 		const laterMigrations = await mkdtemp(join(tmpdir(), 'llm-retro-migrations-'));
 		try {
 			await writeFile(
-				join(laterMigrations, '0002_create_order_probe.sql'),
+				join(laterMigrations, '0002-create-order-probe.sql'),
 				'CREATE TABLE migration_order_probe (value integer NOT NULL); INSERT INTO migration_order_probe VALUES (41);'
 			);
 			await writeFile(
-				join(laterMigrations, '0003_observe_order_probe.sql'),
+				join(laterMigrations, '0002_observe-order-probe.sql'),
 				'INSERT INTO migration_order_probe SELECT value + 1 FROM migration_order_probe;'
 			);
 
