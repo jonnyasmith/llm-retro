@@ -12,6 +12,7 @@
     "sparkline",
     "unparseable",
     "unpromoted",
-    "upserts"
+    "upserts",
+    "WORKTREE"
   ]
 }
