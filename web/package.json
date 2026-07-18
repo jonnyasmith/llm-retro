@@ -6,6 +6,11 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
+		"dev:local": "pnpm db:up && vite dev",
+		"db:up": "docker compose -f ../compose.yaml up db -d --wait",
+		"db:down": "docker compose -f ../compose.yaml stop db",
+		"db:reset": "docker compose -f ../compose.yaml down -v db && pnpm db:up",
+		"db:logs": "docker compose -f ../compose.yaml logs -f db",
 		"build": "vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",

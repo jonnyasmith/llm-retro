@@ -9,7 +9,11 @@ export default defineConfig({
 				// Force runes mode for the project, except for libraries. Can be removed in svelte 6.
 				runes: ({ filename }) => filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
-			adapter: adapter()
+			adapter: adapter(),
+			// The canonical .env lives at the repository root (shared with Docker
+			// Compose), one level above this SvelteKit project. Point SvelteKit's
+			// env loader there so `pnpm dev` sees DATABASE_URL et al.
+			env: { dir: '..' }
 		})
 	],
 	test: {
