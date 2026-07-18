@@ -11,8 +11,7 @@ Use progressive disclosure: read only the guidance relevant to the current task,
 - **Domain docs:** Multi-context (monorepo) layout. See `docs/agents/domain.md`.
 - **Planning:** When creating or reviewing an implementation plan (not the actual implement phase), follow `docs/agents/planning.md`.
 - **Issue tracker:** Issues and PRDs are tracked in GitHub Issues for this repository. See `docs/agents/issue-tracker.md`.
-- **Prototyping (web):** Throwaway UI prototypes are dev-only routes under `/prototype`. See `web/docs/agents/prototyping.md`.
-- **Design system (web):** All web UI is composed from the `$lib/ui` primitive kit (typed variants, design tokens, scoped CSS). See `web/docs/agents/design-system.md` before building or changing web UI.
+- **Per-app guides:** Each app dir carries its own `AGENTS.md` (e.g. `web/AGENTS.md`) with app-specific commands, verification, and conventions. omp auto-loads the one for the directory you're working in and surfaces the others as pointers — no manual loading.
 - **Triage labels:** Triage uses the canonical `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix` labels. See `docs/agents/triage-labels.md`.
 
 ## Final review loop
