@@ -1,6 +1,6 @@
 # Web
 
-The SvelteKit application: the control plane and Viewers. Domain language is in [`CONTEXT.md`](CONTEXT.md); the root [`../AGENTS.md`](../AGENTS.md) still applies (omp loads it alongside this file).
+The SvelteKit application: the control plane and Viewers. Domain language is in [`CONTEXT.md`](CONTEXT.md); the root [`../AGENTS.md`](../AGENTS.md) also applies.
 
 ## Verify after changes
 
