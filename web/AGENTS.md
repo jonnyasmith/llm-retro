@@ -4,7 +4,7 @@ The SvelteKit application: the control plane and Viewers. The root [`../AGENTS.m
 
 ## Domain & decisions
 
-- **Language:** [`CONTEXT.md`](CONTEXT.md) — web's glossary.
+- **Language:** [`CONTEXT.md`](CONTEXT.md) — web's inner domain; solution-wide terms in [`../CONTEXT.md`](../CONTEXT.md).
 - **Decisions:** [`docs/adr/`](docs/adr/) — web-scoped ADRs.
 
 ## Verify after changes

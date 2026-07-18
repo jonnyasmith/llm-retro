@@ -9,7 +9,7 @@
 Use progressive disclosure: read only the guidance relevant to the current task, immediately before it is needed.
 
 - **Working in an app?** Read that app's `AGENTS.md` first (e.g. `web/AGENTS.md`); it unpacks that app's domain (`CONTEXT.md`), decisions (`docs/adr/`), and conventions. Agent tools following the `AGENTS.md` convention load it automatically by directory.
-- **Domain & decisions:** `CONTEXT-MAP.md` maps the contexts and how they relate; repo-wide decisions live in `docs/adr/`. Use each context's `CONTEXT.md` vocabulary in your output (issue titles, tests, proposals), and flag anything that contradicts an ADR.
+- **Domain & decisions:** The root `CONTEXT.md` defines solution-wide concepts; each app's own `CONTEXT.md` defines its inner domain. Repo-wide decisions live in `docs/adr/`. Use that vocabulary in your output (issue titles, tests, proposals), and flag anything that contradicts an ADR.
 - **Planning:** When creating or reviewing an implementation plan (not the actual implement phase), follow `docs/agents/planning.md`.
 - **Issue tracker:** Issues and PRDs are tracked in GitHub Issues for this repository. See `docs/agents/issue-tracker.md`.
 - **Triage labels:** Triage uses the canonical `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix` labels. See `docs/agents/triage-labels.md`.

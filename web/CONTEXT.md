@@ -1,6 +1,6 @@
 # Web
 
-The SvelteKit application: the control plane for LLM Retro and the home of the Viewers.
+The SvelteKit application: the control plane for LLM Retro and the home of the Viewers. Solution-wide terms (Session, Signal, Inference, Retro…) live in the root [`../CONTEXT.md`](../CONTEXT.md).
 
 ## Language
 
@@ -16,7 +16,3 @@ The Viewer that renders Signals: deterministic, authoritative figures over the S
 
 **Insights view**:
 The Viewer that renders Inferences: the model-derived, explicitly non-authoritative Retro layer over the same Sessions.
-
-**Retro**:
-A retrospective review over one or more Sessions surfacing what worked and what didn't.
-_Avoid_: Report, review, analysis.
