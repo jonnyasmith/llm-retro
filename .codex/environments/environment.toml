@@ -3,4 +3,7 @@ version = 1
 name = "llm-retro"
 
 [setup]
-script = "cp \"$CODEX_SOURCE_TREE_PATH/.env\" \"$CODEX_WORKTREE_PATH\""
+script = '''
+cp "$CODEX_SOURCE_TREE_PATH/.env" "$CODEX_WORKTREE_PATH" 
+cd web
+pnpm install --frozen-lockfile'''
