@@ -1,46 +1,39 @@
 # Domain Docs
 
-How the engineering skills should consume this repo's domain documentation when exploring the codebase.
+How to consume this repo's domain documentation when exploring the codebase.
 
 ## Before exploring, read these
 
-This repo is **multi-context** (a monorepo): start at **`CONTEXT-MAP.md`** at the root — a small
-index that lists the contexts and how they relate, one `CONTEXT.md` per context (top-level app dir,
-e.g. `web/`). Read the map, then the context doc(s) relevant to your topic; the language lives in
-those nested files, not the map.
+Start at **`CONTEXT-MAP.md`** at the root — a small index of the contexts and how they relate. Then read the **`CONTEXT.md`** of each context your task touches; that's where the ubiquitous language lives.
 
-- **`docs/adr/`** — system-wide decisions; read the ADRs that touch the area you're about to work in.
-- **`<context>/docs/adr/`** — context-scoped decisions (e.g. `web/docs/adr/`); read these too when
-  working inside that context.
+- **`docs/adr/`** — system-wide decisions. Read the ADRs that touch the area you're about to work in.
+- **`<context>/docs/adr/`** — context-scoped decisions (e.g. `web/docs/adr/`). Read these too when working inside that context.
 
-If any of these files don't exist, **proceed silently**. Don't flag their absence; don't suggest creating them upfront. The `/domain-modeling` skill (reached via `/grill-with-docs` and `/improve-codebase-architecture`) creates them lazily when terms or decisions actually get resolved.
-
-## File structure
-
-This repo (multi-context — `CONTEXT-MAP.md` present at the root; contexts are top-level app dirs):
+## Layout
 
 ```text
 /
-├── CONTEXT-MAP.md                     ← shared kernel + context map
-├── docs/adr/                          ← system-wide decisions
+├── CONTEXT-MAP.md          ← context index + relationships
+├── docs/adr/               ← system-wide decisions
 ├── web/
-│   ├── CONTEXT.md                     ← web-specific language
-│   └── docs/adr/                      ← web-scoped decisions
-├── jobs/                              ← CONTEXT.md added lazily
-└── db/                               ← CONTEXT.md added lazily
+│   ├── CONTEXT.md          ← web language
+│   └── docs/adr/           ← web-scoped decisions
+├── jobs/
+│   └── CONTEXT.md          ← jobs language
+└── db/
+    └── CONTEXT.md          ← database language
 ```
 
-A single-context repo instead keeps one `CONTEXT.md` + `docs/adr/` at the root, with no
-`CONTEXT-MAP.md`.
+A new app follows the same shape: its own `CONTEXT.md` in the app dir, added to `CONTEXT-MAP.md`, plus a `docs/adr/` once it accrues context-scoped decisions. A context without a `CONTEXT.md` yet just has no bespoke language yet — proceed; `/domain-modeling` fills it in lazily as terms get resolved.
 
 ## Use the glossary's vocabulary
 
-When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test name), use the term as defined in `CONTEXT.md`. Don't drift to synonyms the glossary explicitly avoids.
+When your output names a domain concept (an issue title, a refactor proposal, a hypothesis, a test name), use the term as defined in the relevant context's `CONTEXT.md`. Don't drift to synonyms the glossary explicitly lists under `_Avoid_`.
 
-If the concept you need isn't in the glossary yet, that's a signal — either you're inventing language the project doesn't use (reconsider) or there's a real gap (note it for `/domain-modeling`).
+If the concept you need isn't in any glossary yet, that's a signal — either you're inventing language the project doesn't use (reconsider) or there's a real gap (note it for `/domain-modeling`).
 
 ## Flag ADR conflicts
 
 If your output contradicts an existing ADR, surface it explicitly rather than silently overriding:
 
-> _Contradicts ADR-0007 (event-sourced orders) — but worth reopening because…_
+> _Contradicts ADR-0008 (Signals deterministic, Inferences interpretive) — but worth reopening because…_
