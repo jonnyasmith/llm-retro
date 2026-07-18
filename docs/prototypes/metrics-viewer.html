@@ -3,18 +3,24 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>PROTOTYPE — Metrics Viewer (#7)</title>
+<title>PROTOTYPE — Metrics + Insights Viewer (#7 / #8)</title>
 <!--
-  THROWAWAY PROTOTYPE for issue #7 "Specify the metrics viewer".
-  Question: how should the metrics viewer look and behave — which of the 8 Signals
-  surface and how, layout/grouping, interactions (filters, drill-down, the latency
-  hour-of-day + latency-per-token views), and how it coordinates with the retro view.
+  THROWAWAY PROTOTYPE for the v1 viewers — metrics (#7) and retro/insights (#8),
+  two views over one shared, filtered dataset.
+  Question: how should each viewer look/behave, which Signals (#4) + Inferences (#6)
+  surface and how, and how the two coordinate (shared nav/filters/selection).
 
-  Chosen design (#7): single header nav — Overview | Sessions | Insights | Jobs.
-  Overview is the question-driven layout (latency hero); Sessions is master-detail;
-  Overview's session-shape scatter drills into Sessions. Filters + view persist via
-  ?view=. All mock data, in-memory, no persistence. (Earlier A/B/C/S layout variants
-  live in this branch's git history.)
+  Chosen design: single header nav — Overview | Sessions | Insights | Jobs.
+  · Overview — question-driven metrics layout (latency hero); session-shape scatter drills to Sessions.
+  · Sessions — master-detail per-session Signal breakdown; links across to Insights.
+  · Insights (#8) — the LLM Inference layer over the same filtered set: thematic synthesis
+    (drills to sessions), deterministic dumb-zone aggregate threshold, and per-session
+    Inferences (course-corrections, input-noise waste, dumb-zone) each linked back to the
+    exact Turn/Message with a provenance stamp + non-authoritative marker. "View metrics →"
+    cross-links to Sessions — same dataset, sibling surfaces.
+  · Jobs (#5) — control-plane stub.
+  Filters + view persist via ?view=. All mock data, in-memory, no persistence.
+  (Earlier A/B/C/S metrics layout variants live in this branch's git history.)
   Run: `open docs/prototypes/metrics-viewer.html` (macOS) or drop it in a browser.
   Not production code — no SvelteKit, no build, no tests. Fold the winner into the
   real app when the spec lands.
@@ -149,24 +155,43 @@
   .verdict a { font-weight: 600; }
   .heroband { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
 
-  /* ---------- Floating switcher ---------- */
-  .switcher {
-    position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); z-index: 100;
-    display: flex; align-items: center; gap: 4px; background: #05070a;
-    border: 1px solid #30363d; border-radius: 999px; padding: 6px 8px;
-    box-shadow: 0 10px 40px rgba(0,0,0,.6); font-family: var(--mono);
-  }
-  .switcher button { border: 0; background: transparent; color: var(--ink); width: 30px; height: 30px; border-radius: 50%; font-size: 16px; }
-  .switcher button:hover { background: #1c232d; }
-  .switcher .label { padding: 0 12px; font-size: 13px; white-space: nowrap; }
-  .switcher .label b { color: var(--accent); }
-  .switcher .tag { font-size: 10px; color: var(--dim); margin-left: 8px; text-transform: uppercase; letter-spacing: .5px; }
   .drilltip { color: var(--dim); font-size: 11.5px; font-style: italic; }
-  .subtabs { display: inline-flex; gap: 4px; background: var(--panel2); border: 1px solid var(--line); padding: 4px; border-radius: 10px; margin-bottom: 18px; }
-  .subtabs button { border: 0; background: transparent; color: var(--muted); padding: 7px 16px; border-radius: 7px; font-weight: 600; font-size: 13px; display: inline-flex; align-items: center; gap: 7px; }
-  .subtabs button.on { background: var(--accent); color: #fff; }
-  .subtabs .count { font-size: 11px; padding: 1px 6px; border-radius: 20px; background: rgba(255,255,255,.15); }
-  .subtabs button:not(.on) .count { background: var(--panel); }
+
+  /* ---------- Insights viewer (#8) ---------- */
+  .insights { max-width: 1120px; }
+  .section h2 { font-size: 22px; font-weight: 700; letter-spacing: -.3px; margin: 0 0 4px; color: var(--ink); }
+  .qsub { color: var(--muted); margin: 0 0 16px; max-width: 780px; }
+  .nonauth-banner { align-items: center; gap: 12px; padding: 9px 14px; margin-bottom: 24px; background: rgba(226,179,65,.07); border: 1px solid rgba(226,179,65,.28); border-radius: 10px; }
+  .nonauth { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--warn); }
+  .pmono { font-family: var(--mono); font-size: 11px; }
+  .themecard { min-height: 158px; cursor: default; }
+  .thtitle { font-size: 14px; text-transform: none; color: var(--ink); margin: 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; margin: 10px 0; }
+  .chip { font-family: var(--mono); font-size: 11px; padding: 2px 7px; border-radius: 6px; background: var(--panel2); border: 1px solid var(--line); color: var(--muted); cursor: pointer; }
+  .chip:hover { border-color: var(--accent); color: var(--ink); }
+  .chip.more { cursor: default; opacity: .6; }
+  .prov { margin-top: auto; padding-top: 10px; display: flex; flex-direction: column; gap: 2px; border-top: 1px dashed var(--line); }
+  .prov .nonauth { font-size: 9.5px; }
+  .prov .pmono { color: var(--dim); }
+  #iList .srow { display: block; }
+  .srow-top { display: flex; align-items: center; gap: 8px; }
+  .stitle { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .srow-sub { font-size: 11.5px; color: var(--dim); margin-top: 3px; }
+  .idot { font-family: var(--mono); font-size: 11px; font-weight: 700; }
+  .idetail-head { border-bottom: 1px solid var(--line); padding-bottom: 12px; margin-bottom: 14px; }
+  .metricslink { font-weight: 600; font-size: 12.5px; }
+  .ruler { position: relative; height: 22px; margin-top: 14px; }
+  .rline { position: absolute; top: 10px; left: 0; right: 26px; height: 2px; background: var(--line); }
+  .rdot { position: absolute; top: 6px; width: 11px; height: 11px; border-radius: 50%; transform: translateX(-50%); border: 2px solid var(--bg); cursor: help; }
+  .rend { position: absolute; right: 0; top: 2px; font-size: 10px; color: var(--dim); font-family: var(--mono); }
+  .infcard { border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0; background: var(--panel); padding: 12px 14px; margin-bottom: 12px; }
+  .itag { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
+  .isum { margin: 4px 0 8px; font-size: 13.5px; color: var(--ink); }
+  .ev { margin: 0 0 8px; padding: 7px 12px; border-left: 2px solid var(--line); background: var(--panel2); color: var(--muted); font-size: 12.5px; font-style: italic; border-radius: 0 6px 6px 0; }
+  .fix { margin: 0 0 8px; font-size: 12.5px; color: var(--muted); }
+  .fix s { color: var(--dim); }
+  .conf { font-family: var(--mono); font-size: 11px; color: var(--dim); }
+  .evref { font-family: var(--mono); font-size: 11.5px; font-weight: 600; }
 </style>
 </head>
 <body>
@@ -256,6 +281,86 @@ function makeSession(i) {
 }
 const ALL = Array.from({ length: 64 }, (_, i) => makeSession(i + 1));
 
+/* =====================================================================
+   MOCK INFERENCE LAYER (#6/#8) — LLM-derived, non-authoritative, stamped.
+   Per-session: course-corrections, input-noise waste, dumb-zone detection.
+   Cross-session: thematic synthesis (LLM) + dumb-zone aggregate (deterministic).
+   Each Inference carries the stored contract the viewer forces concrete:
+   refs back to Turns/Messages, an evidence excerpt, confidence, a provenance
+   stamp (model, prompt-version, extractor-version, ran-at), authoritative:false.
+   ===================================================================== */
+const EXTRACTOR_V = "0.4.1";
+const CC = [
+  { s: "Redirected the model away from rewriting the working parser.", e: "no — don't touch the parser, just add the flag" },
+  { s: "Halted an unrequested refactor of the auth flow.",            e: "stop, that's not what I asked. revert that." },
+  { s: "Corrected a wrong assumption about the DB schema.",           e: "the column already exists, check the migration" },
+  { s: "Re-scoped after the model over-engineered the solution.",     e: "this is way too much — just the one function" },
+  { s: "Stopped the model deleting tests it misread as dead.",        e: "those tests are used, leave them" },
+  { s: "Pulled the model back after it invented a config key.",       e: "that option doesn't exist, read the schema" },
+];
+const NOISE = [
+  { s: "Dictation garbled 'auth' → 'oath'; model built OAuth for 2 turns.", e: "add oath to teh login page", fix: "add auth to the login page" },
+  { s: "Typo 'delete' → 'dilate' sent it down an image path.",              e: "can you dilate the old rows",  fix: "can you delete the old rows" },
+  { s: "Dropped word left the request ambiguous; model guessed wrong.",     e: "make it work the the config",  fix: "make it read from the config" },
+];
+const DZ = "Quality degraded past ~{K}k ctx tokens: re-suggested an edit from 20 turns back, lost track of the file it had changed.";
+function inf(type, s, turn, obj, promptV, conf) {
+  return {
+    id: `INF-${s.id}-${type}-${turn}`,
+    type, sessionId: s.id,
+    turnRef: turn, messageRef: `${s.id}:M${turn * 2}`,
+    summary: obj.s, evidence: obj.e, correctedTo: obj.fix || null,
+    confidence: conf,
+    authoritative: false,
+    provenance: { model: s.dominantModel, promptVersion: promptV, extractorVersion: EXTRACTOR_V,
+      ranAt: new Date(NOW.getTime() - ri(1, 40) * 3600000), rawResponseRef: `resp://${s.id}/${type}` },
+  };
+}
+ALL.forEach(s => {
+  const infs = [];
+  const nCC = rnd() < 0.75 ? ri(1, Math.min(4, Math.ceil(s.turns / 12))) : 0;
+  const usedT = new Set();
+  for (let k = 0; k < nCC; k++) { let t; do { t = ri(2, s.turns); } while (usedT.has(t)); usedT.add(t);
+    infs.push(inf("course-correction", s, t, CC[ri(0, CC.length - 1)], "cc@3", +(0.62 + rnd() * 0.34).toFixed(2))); }
+  const nNoise = rnd() < 0.38 ? ri(1, 2) : 0;
+  for (let k = 0; k < nNoise; k++) { let t; do { t = ri(1, s.turns); } while (usedT.has(t)); usedT.add(t);
+    infs.push(inf("input-noise", s, t, NOISE[ri(0, NOISE.length - 1)], "noise@2", +(0.55 + rnd() * 0.34).toFixed(2))); }
+  // dumb-zone DETECTION (per session): degradation point in cumulative ctx tokens, or null
+  let dz = null;
+  if (s.turns > 22 && rnd() < 0.5) {
+    const kTok = ri(34, 128);
+    const t = ri(Math.ceil(s.turns * 0.55), s.turns);
+    dz = inf("dumb-zone", s, t, { s: DZ.replace("{K}", kTok), e: "you already changed that file — see turn " + (t - 18) }, "dz@2", +(0.6 + rnd() * 0.3).toFixed(2));
+    dz.degradedAtTokens = kTok * 1000;
+    infs.push(dz);
+  }
+  s.inferences = infs;
+  s.dumbZone = dz; // the per-session dumb-zone Inference (or null = never degraded)
+});
+// dumb-zone AGGREGATE — deterministic distribution over per-session degradation points → threshold
+function dumbZoneAggregate(sessions) {
+  const pts = sessions.filter(s => s.dumbZone).map(s => s.dumbZone.degradedAtTokens).sort((a, b) => a - b);
+  const median = pts.length ? pts[Math.floor(pts.length / 2)] : null;
+  return { points: pts, threshold: median, detected: pts.length, total: sessions.length };
+}
+// thematic synthesis — map-reduce over the STRUCTURED layer (Signals + Inferences), never raw text
+const THEMES = [
+  { id: "T1", title: "Afternoon sessions cost more correction",
+    synthesis: "Sessions started 13:00–17:00 average more course-corrections per turn, compounding the per-token latency penalty seen in metrics.",
+    match: s => (s.start.getUTCHours() + 1) % 24 >= 13 && (s.start.getUTCHours() + 1) % 24 <= 17 && s.inferences.some(i => i.type === "course-correction") },
+  { id: "T2", title: "Long single-loop sessions hit the dumb zone",
+    synthesis: "Degradation clusters in long, high-turn sessions run as one loop rather than several short ones — a session-shape problem, not a model one.",
+    match: s => s.dumbZone },
+  { id: "T3", title: "Dictation noise clusters in quick edits",
+    synthesis: "Input-noise waste concentrates in short sessions where a garbled prompt goes uncaught for a turn or two before redirection.",
+    match: s => s.inferences.some(i => i.type === "input-noise") },
+  { id: "T4", title: "Reconstructed-token sessions hide real cost",
+    synthesis: "Codex sessions (reconstructed token basis) with course-corrections under-report the true spend of getting back on track.",
+    match: s => s.tokens.basis === "reconstructed" && s.inferences.length > 0 },
+];
+const THEME_STAMP = { model: "claude-opus-4", promptVersion: "synth@2", extractorVersion: EXTRACTOR_V,
+  ranAt: new Date(NOW.getTime() - 2 * 3600000), rawResponseRef: "resp://synthesis/latest" };
+
 /* ---------- filter state ---------- */
 const state = {
   view: "overview",
@@ -263,6 +368,7 @@ const state = {
   models: new Set(),           // empty = all
   days: 21,
   selected: ALL[0].id,         // variant B detail
+  insightSel: null,            // insights master-detail selection
   latencyMode: "raw",          // raw | perToken
 };
 
@@ -395,6 +501,22 @@ function chartSpark(el, s) {
     yAxis:{type:"value",show:false}, series:[{type:"line",data:s.latency.map(l=>l.ms),showSymbol:false,
       lineStyle:{width:1.5,color:"#4c8dff"},areaStyle:{color:"rgba(76,141,255,.15)"}}] });
 }
+function chartDumbZone(el, dza) {
+  const W = 20000, MAX = 160000;
+  const nb = MAX / W;
+  const buckets = Array.from({ length: nb }, () => 0);
+  dza.points.forEach(p => { const i = Math.min(nb - 1, Math.floor(p / W)); buckets[i]++; });
+  const labels = buckets.map((_, i) => `${(i*W)/1000}–${((i+1)*W)/1000}k`);
+  mk(el, {
+    grid: { left: 40, right: 20, top: 24, bottom: 42 }, tooltip: { trigger: "axis" },
+    xAxis: { type: "category", data: labels, axisLine: { lineStyle: { color: AX.line } },
+      axisLabel: { color: AX.text, fontSize: 10, rotate: 30 }, name: "context tokens at degradation", nameLocation: "middle", nameGap: 34, nameTextStyle: { color: AX.text, fontSize: 10 } },
+    yAxis: { type: "value", axisLabel: { color: AX.text }, splitLine: { lineStyle: { color: AX.split } }, name: "sessions", nameTextStyle: { color: AX.text, fontSize: 10 } },
+    series: [{ type: "bar", data: buckets, itemStyle: { color: "#e06c75", borderRadius: [3, 3, 0, 0] },
+      markLine: { symbol: "none", label: { formatter: `threshold ~${fmtK(dza.threshold)}`, color: "#e2b341", position: "insideEndTop", fontSize: 10 },
+        lineStyle: { color: "#e2b341", type: "dashed" }, data: [{ xAxis: Math.floor(dza.threshold / W) }] } }],
+  });
+}
 
 /* =====================================================================
    SHARED CHROME
@@ -428,13 +550,97 @@ function chrome(bodyHTML) {
   </div>
   <div class="main">${bodyHTML}</div>`;
 }
-function insightsBody() {
-  const f = filtered();
-  return `<div style="max-width:760px;margin:24px auto;color:var(--muted)">
-    <h2 style="color:var(--ink);margin-bottom:6px">Insights</h2>
-    <p>Owned by <a href="#">#8</a> — the Inference layer (course-corrections, input-noise waste, dumb-zone, thematic synthesis) over the <b>same filtered dataset</b> (${f.length} sessions). Signals stay deterministic; Insights are the LLM pass.</p>
-    <p class="dim">Coordination: the tool/model/date filters above persist across Overview, Sessions and Insights — one dataset, many views. Stub only; not part of #7's metrics spec.</p>
+const INFMETA = {
+  "course-correction": { icon: "⤺", label: "Course-correction", color: "#e2b341" },
+  "input-noise":       { icon: "⌇", label: "Input-noise waste", color: "#c678dd" },
+  "dumb-zone":         { icon: "▽", label: "Dumb zone",         color: "#e06c75" },
+};
+function relTime(d) {
+  const h = Math.round((NOW - d) / 3600000);
+  return h < 1 ? "just now" : h < 24 ? h + "h ago" : Math.round(h / 24) + "d ago";
+}
+function provStamp(p) {
+  return `<div class="prov" title="Provenance stamp — recompute is gated on this stamp changing (#6)">
+    <span class="nonauth">model-derived · non-authoritative</span>
+    <span class="pmono">${p.model} · ${p.promptVersion} · extractor v${p.extractorVersion} · ran ${relTime(p.ranAt)}</span></div>`;
+}
+function infCard(i) {
+  const m = INFMETA[i.type];
+  const noise = i.correctedTo ? `<div class="fix">heard: <s>${i.evidence}</s> &nbsp;→&nbsp; meant: <b>${i.correctedTo}</b></div>`
+                             : `<blockquote class="ev">${i.evidence}</blockquote>`;
+  return `<div class="infcard" style="border-left-color:${m.color}">
+    <div class="row"><span class="itag" style="color:${m.color}">${m.icon} ${m.label}</span>
+      <span class="spacer" style="flex:1"></span>
+      <span class="conf" title="model confidence">conf ${(i.confidence*100).toFixed(0)}%</span></div>
+    <div class="isum">${i.summary}</div>
+    ${noise}
+    <div class="row"><a href="#" class="evref" data-turn="${i.turnRef}">→ Turn ${i.turnRef} · ${i.messageRef}</a>
+      ${i.degradedAtTokens ? `<span class="spacer" style="flex:1"></span><span class="dim pmono">degraded @ ~${fmtK(i.degradedAtTokens)} ctx tokens</span>` : ""}</div>
+    ${provStamp(i.provenance)}</div>`;
+}
+function insightsBody(f) {
+  const dza = dumbZoneAggregate(f);
+  const themes = THEMES.map(t => ({ ...t, sessions: f.filter(t.match) })).filter(t => t.sessions.length);
+  const totalInf = f.reduce((n, s) => n + s.inferences.length, 0);
+  const byType = { "course-correction": 0, "input-noise": 0, "dumb-zone": 0 };
+  f.forEach(s => s.inferences.forEach(i => byType[i.type]++));
+  const sel = f.find(s => s.id === state.insightSel);
+  // left rail — sessions ranked by inference count
+  const listed = [...f].sort((a, b) => b.inferences.length - a.inferences.length);
+  const rail = listed.map(s => {
+    const counts = { "course-correction": 0, "input-noise": 0, "dumb-zone": 0 };
+    s.inferences.forEach(i => counts[i.type]++);
+    const dots = Object.entries(counts).filter(([, n]) => n).map(([t, n]) =>
+      `<span class="idot" style="color:${INFMETA[t].color}">${INFMETA[t].icon}${n}</span>`).join(" ");
+    return `<div class="srow ${s.id === state.insightSel ? "sel" : ""}" data-isel="${s.id}">
+      <div class="srow-top"><span class="badge ${s.tool}">${s.tool}</span><span class="stitle">${s.title}</span></div>
+      <div class="srow-sub">${s.id} · ${s.turns} turns · ${dots || '<span class="dim">no inferences</span>'}</div></div>`;
+  }).join("");
+  const themeCards = themes.map(t => `
+    <div class="col2"><div class="card themecard" data-theme="${t.id}">
+      <div class="row"><h3 class="thtitle">${t.title}</h3></div>
+      <div class="hint">${t.synthesis}</div>
+      <div class="chips">${t.sessions.slice(0, 8).map(s => `<span class="chip" data-jump="${s.id}">${s.id}</span>`).join("")}${t.sessions.length > 8 ? `<span class="chip more">+${t.sessions.length - 8}</span>` : ""}</div>
+      ${provStamp(THEME_STAMP)}</div></div>`).join("");
+  return `<div class="insights">
+    <div class="row nonauth-banner"><span class="nonauth">⚠ Model-derived · non-authoritative</span>
+      <span class="dim">Inferences are the LLM pass over the same ${f.length} filtered sessions — Signals remain the source of truth. Extractor v${EXTRACTOR_V}.</span>
+      <span class="spacer" style="flex:1"></span><span class="dim pmono">${totalInf} inferences · ⤺${byType["course-correction"]} ⌇${byType["input-noise"]} ▽${byType["dumb-zone"]}</span></div>
+
+    <section class="section" id="i1">
+      <h2>What patterns cut across my sessions?</h2>
+      <p class="qsub">Thematic synthesis — a map-reduce over the <b>structured layer</b> (Signals + per-session Inferences), never raw transcripts. Themes drill to the sessions behind them.</p>
+      <div class="grid">${themeCards || '<div class="dim">No themes for this scope.</div>'}</div>
+    </section>
+
+    <section class="section" id="i2">
+      <h2>Where does quality fall off a cliff?</h2>
+      <p class="qsub">Dumb-zone aggregate — a <b>deterministic</b> distribution over per-session degradation points (no 2nd model pass).</p>
+      <div class="chart" id="cI_dz" style="height:230px"></div>
+      <div class="verdict"><span class="lbl">Reads as →</span> ${dza.threshold ? `Quality tends to degrade past <b>~${fmtK(dza.threshold)}</b> context tokens — median of <b>${dza.detected}/${dza.total}</b> sessions where degradation was detected.` : "No degradation detected in this scope."}</div>
+    </section>
+
+    <section class="section" id="i3">
+      <h2>What happened inside a session?</h2>
+      <p class="qsub">Per-session Inferences over the raw transcript, each linked back to the exact Turn/Message it judged.</p>
+      <div class="md">
+        <div class="md-list" id="iList">${rail}</div>
+        <div class="md-detail" id="iDetail">${renderInsightDetail(sel)}</div>
+      </div>
+    </section>
   </div>`;
+}
+function renderInsightDetail(s) {
+  if (!s) return `<div class="muted">No session in scope.</div>`;
+  const infs = [...s.inferences].sort((a, b) => a.turnRef - b.turnRef);
+  const ruler = infs.map(i => `<span class="rdot" style="left:${(i.turnRef / s.turns * 100).toFixed(1)}%;background:${INFMETA[i.type].color}" title="Turn ${i.turnRef}: ${INFMETA[i.type].label}"></span>`).join("");
+  return `<div class="idetail-head">
+      <div class="row"><h2 style="font-size:18px">${s.title}</h2><span class="spacer" style="flex:1"></span>
+        <a href="#" class="metricslink" data-tometrics="${s.id}">View metrics →</a></div>
+      <div class="muted" style="margin-top:2px">${s.id} · ${s.tool} · ${s.dominantModel} · <b>${s.turns}</b> turns · ${fmtK(s.tokens.in + s.tokens.out)} tokens · ${fmtMin(s.durationMin)}</div>
+      <div class="ruler" title="Turn timeline — markers show where Inferences landed"><div class="rline"></div>${ruler}<span class="rend">${s.turns}</span></div>
+    </div>
+    ${infs.length ? infs.map(infCard).join("") : '<div class="muted" style="padding:18px 0">No Inferences — the model flagged nothing in this session.</div>'}`;
 }
 function jobsBody() {
   const jobs = [
@@ -623,8 +829,24 @@ function pageSessions() {
   wireSessions(f);
 }
 function pageInsights() {
-  document.getElementById("app").innerHTML = chrome(insightsBody());
+  const f = filtered();
+  const richest = [...f].sort((a, b) => b.inferences.length - a.inferences.length)[0];
+  if (!f.find(s => s.id === state.insightSel)) state.insightSel = (richest || f[0] || {}).id;
+  document.getElementById("app").innerHTML = chrome(insightsBody(f));
   wireChrome();
+  wireInsights(f);
+}
+function wireInsights(f) {
+  const dza = dumbZoneAggregate(f);
+  if (dza.points.length) chartDumbZone(byId("cI_dz"), dza);
+  else if (byId("cI_dz")) byId("cI_dz").innerHTML = '<div class="muted" style="padding:24px">No degradation detected in this scope.</div>';
+  document.querySelectorAll("#iList .srow").forEach(r =>
+    r.onclick = () => { state.insightSel = r.dataset.isel; render(); });
+  document.querySelectorAll("[data-jump]").forEach(c =>
+    c.onclick = () => { state.insightSel = c.dataset.jump; render();
+      document.getElementById("i3")?.scrollIntoView({ behavior: "smooth", block: "start" }); });
+  document.querySelectorAll("[data-tometrics]").forEach(el =>
+    el.onclick = e => { e.preventDefault(); state.selected = el.dataset.tometrics; state.view = "sessions"; render(); });
 }
 function pageJobs() {
   document.getElementById("app").innerHTML = chrome(jobsBody());
