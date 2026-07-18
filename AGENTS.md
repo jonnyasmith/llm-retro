@@ -9,7 +9,7 @@
 Use progressive disclosure: read only the guidance relevant to the current task, immediately before it is needed.
 
 - **Domain docs:** This repository uses the single-context domain documentation layout. See `docs/agents/domain.md`.
-- **Planning:** When creating or reviewing an implementation plan, follow `docs/agents/planning.md`.
+- **Planning:** When creating or reviewing an implementation plan (not the actual implement phase), follow `docs/agents/planning.md`.
 - **Issue tracker:** Issues and PRDs are tracked in GitHub Issues for this repository. See `docs/agents/issue-tracker.md`.
 - **Triage labels:** Triage uses the canonical `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix` labels. See `docs/agents/triage-labels.md`.
 
