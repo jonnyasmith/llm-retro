@@ -159,6 +159,11 @@
   .switcher .label b { color: var(--accent); }
   .switcher .tag { font-size: 10px; color: var(--dim); margin-left: 8px; text-transform: uppercase; letter-spacing: .5px; }
   .drilltip { color: var(--dim); font-size: 11.5px; font-style: italic; }
+  .subtabs { display: inline-flex; gap: 4px; background: var(--panel2); border: 1px solid var(--line); padding: 4px; border-radius: 10px; margin-bottom: 18px; }
+  .subtabs button { border: 0; background: transparent; color: var(--muted); padding: 7px 16px; border-radius: 7px; font-weight: 600; font-size: 13px; display: inline-flex; align-items: center; gap: 7px; }
+  .subtabs button.on { background: var(--accent); color: #fff; }
+  .subtabs .count { font-size: 11px; padding: 1px 6px; border-radius: 20px; background: rgba(255,255,255,.15); }
+  .subtabs button:not(.on) .count { background: var(--panel); }
 </style>
 </head>
 <body>
@@ -252,12 +257,13 @@ const ALL = Array.from({ length: 64 }, (_, i) => makeSession(i + 1));
 /* ---------- filter state ---------- */
 const state = {
   view: "metrics",
-  variant: new URLSearchParams(location.search).get("variant") || "A",
+  variant: new URLSearchParams(location.search).get("variant") || "S",
   tools: new Set(TOOLS),
   models: new Set(),           // empty = all
   days: 21,
   selected: ALL[0].id,         // variant B detail
-  latencyMode: "raw",          // raw | perToken  (variant A/C)
+  latencyMode: "raw",          // raw | perToken
+  metricTab: "overview",       // overview | sessions  (Synthesis)
 };
 
 function allModels() {
@@ -485,9 +491,7 @@ function variantA() {
    full per-session Signal breakdown on the right. Primary affordance: browse &
    inspect one session deeply. Coordination: detail has its own Metrics|Retro tab.
    ===================================================================== */
-function variantB() {
-  const f = filtered(); const a = agg(f);
-  if (!f.find(s => s.id === state.selected)) state.selected = f[0]?.id;
+function sessionsBody(f, a) {
   const rows = f.map(s => {
     const tt = s.tokens.in + s.tokens.out;
     return `<div class="srow ${s.id===state.selected?"sel":""}" data-id="${s.id}">
@@ -496,7 +500,7 @@ function variantB() {
         <div class="meta">${s.start.toISOString().slice(0,10)} · ${s.turns} turns · ${fmtK(tt)} tok · ${fmtMin(s.durationMin)}${s.subagents.count?` · ${s.subagents.count} sub`:""}</div></div>
       <div class="spark" id="spk_${s.id}"></div></div>`;
   }).join("");
-  const body = `
+  return `
     <div class="md">
       <div class="md-list">
         <div class="md-agg">
@@ -510,12 +514,19 @@ function variantB() {
       </div>
       <div class="md-detail" id="mdDetail"></div>
     </div>`;
-  document.getElementById("app").innerHTML = chrome(body);
-  wireChrome();
+}
+function wireSessions(f) {
   f.forEach(s => chartSpark(byId("spk_"+s.id), s));
   byId("mdRows").querySelectorAll(".srow").forEach(r =>
     r.onclick = () => { state.selected = r.dataset.id; render(); });
   renderDetail(f.find(s => s.id === state.selected));
+}
+function variantB() {
+  const f = filtered(); const a = agg(f);
+  if (!f.find(s => s.id === state.selected)) state.selected = f[0]?.id;
+  document.getElementById("app").innerHTML = chrome(sessionsBody(f, a));
+  wireChrome();
+  wireSessions(f);
 }
 function renderDetail(s) {
   if (!s) { byId("mdDetail").innerHTML = `<div class="muted">No session in scope.</div>`; return; }
@@ -556,86 +567,120 @@ function renderDetail(s) {
 }
 
 /* =====================================================================
-   VARIANT C — QUESTION-DRIVEN NARRATIVE
-   Organised by the HYPOTHESES the Signals answer, not by Signal. Latency is the
-   hero. Left rail = questions. Each section ends with a verdict linking to Retro.
+   OVERVIEW (question-driven) — shared by variant C and the Synthesis.
+   Organised by the HYPOTHESES the Signals answer, not by Signal. Latency
+   is the hero. Each section ends with a verdict linking to Retro.
    ===================================================================== */
+function latStats(a) {
+  const ptH = hourSeries(a, "perToken");
+  const afternoon = avg(ptH.slice(13,18)), rest = avg(ptH.filter((_,i)=>i<13||i>17));
+  return { afternoon, rest, slower: rest ? ((afternoon/rest - 1) * 100) : 0 };
+}
+function overviewBody(f, a, opts={}) {
+  const { afternoon, rest, slower } = latStats(a);
+  const drillHint = opts.drill ? `<span class="drilltip" style="margin-left:auto">click a point → open that session</span>` : "";
+  return `
+    <section class="section" id="q1">
+      <div class="q">Is the model slower in the afternoon?</div>
+      <div class="sub">Per-response latency bucketed by hour (Europe/London, DST-aware). The <b>per output-token</b> rate is the honest test — it factors out "it simply wrote more."</div>
+      <div class="heroband">
+        <div class="card"><div class="row"><h3>Latency by hour of day</h3><span class="spacer" style="flex:1"></span>
+          <div class="toggle" id="c_latToggle">
+            <button data-mode="raw" class="${state.latencyMode==="raw"?"on":""}">avg latency</button>
+            <button data-mode="perToken" class="${state.latencyMode==="perToken"?"on":""}">per output-token</button>
+          </div></div>
+          <div class="chart" id="cC_lat" style="height:300px"></div></div>
+        <div class="card"><h3>PM vs rest (per-token)</h3>
+          <div class="kpi ${slower>0?"delta up":"delta down"}">${slower>0?"+":""}${slower.toFixed(0)}%</div>
+          <div class="hint">13:00–17:00 rate vs the rest of the day. ${afternoon.toFixed(2)} vs ${rest.toFixed(2)} ms/token.</div>
+          <div class="chart" id="cC_gauge" style="height:150px"></div></div>
+      </div>
+      <div class="verdict"><span class="lbl">Reads as →</span> Afternoon per-token latency runs
+        <b>${slower.toFixed(0)}% higher</b> in scope. <a href="#" data-toretro>Open the Retro thread on this →</a></div>
+    </section>
+    <section class="section" id="q2">
+      <div class="q">Where do my tokens go?</div>
+      <div class="sub">Model mix and the subagent share of the whole tree — what's actually consuming the budget.</div>
+      <div class="grid"><div class="card col3"><h3>By model</h3><div class="chart" id="cC_mix" style="height:260px"></div></div>
+        <div class="card col3"><h3>Root vs subagent tokens</h3><div class="chart" id="cC_sub" style="height:260px"></div>
+          <div class="hint">${a.subCount} child sessions · ${fmtK(a.subTokens)} tok delegated</div></div></div>
+      <div class="verdict"><span class="lbl">Reads as →</span> Subagents carry
+        <b>${a.totalTokens?Math.round(a.subTokens/(a.totalTokens)*100):0}%</b> of tokens. <a href="#" data-toretro>See delegation retro →</a></div>
+    </section>
+    <section class="section" id="q3">
+      <div class="q">What shape are my sessions?</div>
+      <div class="sub">Duration vs turns — many short loops or few long grinds? Not a quality headline, a shape axis.</div>
+      <div class="card"><div class="row"><h3 style="text-transform:none;color:var(--muted)">Duration vs turns</h3>${drillHint}</div>
+        <div class="chart" id="cC_scatter" style="height:320px"></div></div>
+      <div class="verdict"><span class="lbl">Reads as →</span> ${fmtMin(Math.round(a.durationMin/Math.max(a.sessions,1)))} median wall per session,
+        <b>${Math.round(a.turns/Math.max(a.sessions,1))} turns</b> avg. <a href="#" data-toretro>Retro on loop discipline →</a></div>
+    </section>
+    <section class="section" id="q4">
+      <div class="q">What's my tooling footprint?</div>
+      <div class="sub">Which tools the models reach for, across scope.</div>
+      <div class="card"><div class="chart" id="cC_tools" style="height:260px"></div></div>
+    </section>`;
+}
+function wireOverview(f, a, opts={}) {
+  const { slower } = latStats(a);
+  chartLatencyHour(byId("cC_lat"), a, state.latencyMode);
+  gauge(byId("cC_gauge"), slower);
+  chartModelMix(byId("cC_mix"), a);
+  chartSubagentShare(byId("cC_sub"), a);
+  const sc = chartDurationVsTurns(byId("cC_scatter"), f);
+  if (opts.drill) sc.on("click", p => opts.drill(p.data[2]));
+  chartTools(byId("cC_tools"), a);
+  byId("c_latToggle").querySelectorAll("button").forEach(b =>
+    b.onclick = () => { state.latencyMode = b.dataset.mode; render(); });
+  document.querySelectorAll("[data-toretro]").forEach(el =>
+    el.onclick = e => { e.preventDefault(); state.view = "retro"; render(); });
+}
+
+/* ---- Variant C: overview WITH the left rail (kept for reference) ---- */
 function variantC() {
   const f = filtered(); const a = agg(f);
-  const rawH = hourSeries(a, "raw"), ptH = hourSeries(a, "perToken");
-  const afternoon = avg(ptH.slice(13,18)), rest = avg(ptH.filter((_,i)=>i<13||i>17));
-  const slower = rest ? ((afternoon/rest - 1) * 100) : 0;
-  const body = `
-  <div class="cwrap">
+  const body = `<div class="cwrap">
     <nav class="crail">
       <a href="#q1" class="on">Claude slower in the PM?</a>
       <a href="#q2">Where do tokens go?</a>
       <a href="#q3">Session shape</a>
       <a href="#q4">Tooling footprint</a>
     </nav>
-    <div>
-      <section class="section" id="q1">
-        <div class="q">Is the model slower in the afternoon?</div>
-        <div class="sub">Per-response latency bucketed by hour (Europe/London, DST-aware). The <b>per output-token</b> rate is the honest test — it factors out "it simply wrote more."</div>
-        <div class="heroband">
-          <div class="card"><div class="row"><h3>Latency by hour of day</h3><span class="spacer" style="flex:1"></span>
-            <div class="toggle" id="c_latToggle">
-              <button data-mode="raw" class="${state.latencyMode==="raw"?"on":""}">avg latency</button>
-              <button data-mode="perToken" class="${state.latencyMode==="perToken"?"on":""}">per output-token</button>
-            </div></div>
-            <div class="chart" id="cC_lat" style="height:300px"></div></div>
-          <div class="card"><h3>PM vs rest (per-token)</h3>
-            <div class="kpi ${slower>0?"delta up":"delta down"}">${slower>0?"+":""}${slower.toFixed(0)}%</div>
-            <div class="hint">13:00–17:00 rate vs the rest of the day. ${afternoon.toFixed(2)} vs ${rest.toFixed(2)} ms/token.</div>
-            <div class="chart" id="cC_gauge" style="height:150px"></div></div>
-        </div>
-        <div class="verdict"><span class="lbl">Reads as →</span> Afternoon per-token latency runs
-          <b>${slower.toFixed(0)}% higher</b> in scope. <a href="#" data-toretro>Open the Retro thread on this →</a></div>
-      </section>
-
-      <section class="section" id="q2">
-        <div class="q">Where do my tokens go?</div>
-        <div class="sub">Model mix and the subagent share of the whole tree — what's actually consuming the budget.</div>
-        <div class="grid"><div class="card col3"><h3>By model</h3><div class="chart" id="cC_mix" style="height:260px"></div></div>
-          <div class="card col3"><h3>Root vs subagent tokens</h3><div class="chart" id="cC_sub" style="height:260px"></div>
-            <div class="hint">${a.subCount} child sessions · ${fmtK(a.subTokens)} tok delegated</div></div></div>
-        <div class="verdict"><span class="lbl">Reads as →</span> Subagents carry
-          <b>${a.totalTokens?Math.round(a.subTokens/(a.totalTokens)*100):0}%</b> of tokens. <a href="#" data-toretro>See delegation retro →</a></div>
-      </section>
-
-      <section class="section" id="q3">
-        <div class="q">What shape are my sessions?</div>
-        <div class="sub">Duration vs turns — many short loops or few long grinds? Not a quality headline, a shape axis.</div>
-        <div class="card"><div class="chart" id="cC_scatter" style="height:320px"></div></div>
-        <div class="verdict"><span class="lbl">Reads as →</span> ${fmtMin(Math.round(a.durationMin/Math.max(a.sessions,1)))} median wall per session,
-          <b>${Math.round(a.turns/Math.max(a.sessions,1))} turns</b> avg. <a href="#" data-toretro>Retro on loop discipline →</a></div>
-      </section>
-
-      <section class="section" id="q4">
-        <div class="q">What's my tooling footprint?</div>
-        <div class="sub">Which tools the models reach for, across scope.</div>
-        <div class="card"><div class="chart" id="cC_tools" style="height:260px"></div></div>
-      </section>
-    </div>
+    <div>${overviewBody(f, a)}</div>
   </div>`;
   document.getElementById("app").innerHTML = chrome(body);
   wireChrome();
-  chartLatencyHour(byId("cC_lat"), a, state.latencyMode);
-  gauge(byId("cC_gauge"), slower);
-  chartModelMix(byId("cC_mix"), a);
-  chartSubagentShare(byId("cC_sub"), a);
-  chartDurationVsTurns(byId("cC_scatter"), f);
-  chartTools(byId("cC_tools"), a);
-  byId("c_latToggle").querySelectorAll("button").forEach(b =>
-    b.onclick = () => { state.latencyMode = b.dataset.mode; render(); });
-  document.querySelectorAll("[data-toretro]").forEach(el =>
-    el.onclick = e => { e.preventDefault(); state.view = "retro"; render(); });
-  // scrollspy
+  wireOverview(f, a);
   const links = [...document.querySelectorAll(".crail a")];
   const obs = new IntersectionObserver(es => es.forEach(en => {
-    if (en.isIntersecting) { links.forEach(l => l.classList.toggle("on", l.getAttribute("href") === "#"+en.target.id)); }
+    if (en.isIntersecting) links.forEach(l => l.classList.toggle("on", l.getAttribute("href") === "#"+en.target.id));
   }), { rootMargin: "-40% 0px -50% 0px" });
   document.querySelectorAll(".section").forEach(s => obs.observe(s));
+}
+
+/* =====================================================================
+   VARIANT S — SYNTHESIS (the chosen design, #7)
+   Question-driven Overview (variant C, no sidebar) + master-detail
+   Sessions (variant B) as two sub-tabs of the Metrics view. Overview's
+   session-shape scatter drills straight into the Sessions tab.
+   ===================================================================== */
+function variantS() {
+  const f = filtered(); const a = agg(f);
+  const tab = state.metricTab || "overview";
+  if (tab === "sessions" && !f.find(s => s.id === state.selected)) state.selected = f[0]?.id;
+  const subtabs = `<div class="subtabs">
+    <button data-mtab="overview" class="${tab==="overview"?"on":""}">Overview</button>
+    <button data-mtab="sessions" class="${tab==="sessions"?"on":""}">Sessions <span class="count">${a.sessions}</span></button>
+  </div>`;
+  const inner = tab === "overview" ? overviewBody(f, a, { drill: true }) : sessionsBody(f, a);
+  document.getElementById("app").innerHTML = chrome(subtabs + `<div class="mtab-body">${inner}</div>`);
+  wireChrome();
+  document.querySelectorAll("[data-mtab]").forEach(b =>
+    b.onclick = () => { state.metricTab = b.dataset.mtab; render(); });
+  if (tab === "overview")
+    wireOverview(f, a, { drill: id => { state.selected = id; state.metricTab = "sessions"; render(); } });
+  else
+    wireSessions(f);
 }
 function avg(arr){ const v = arr.filter(x=>x!=null); return v.length ? v.reduce((a,b)=>a+b,0)/v.length : 0; }
 function gauge(el, pct) {
@@ -662,9 +707,10 @@ function wireChrome() {
   document.querySelectorAll("[data-days]").forEach(b => b.onclick = () => { state.days = +b.dataset.days; render(); });
 }
 
-const VARIANTS = { A: { name: "Overview dashboard", fn: variantA },
+const VARIANTS = { S: { name: "Synthesis — Overview + Sessions ★", fn: variantS },
+                   A: { name: "Overview dashboard", fn: variantA },
                    B: { name: "Master–detail list", fn: variantB },
-                   C: { name: "Question-driven", fn: variantC } };
+                   C: { name: "Question-driven (with rail)", fn: variantC } };
 const KEYS = Object.keys(VARIANTS);
 
 function syncURL() {
@@ -696,7 +742,7 @@ document.addEventListener("keydown", e => {
   if (e.key === "ArrowLeft") cycle(-1);
   if (e.key === "ArrowRight") cycle(1);
 });
-if (!KEYS.includes(state.variant)) state.variant = "A";
+if (!KEYS.includes(state.variant)) state.variant = "S";
 syncURL();
 render();
 </script>
