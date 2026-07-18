@@ -27,7 +27,14 @@ GitHub shares one number space across issues and PRs, so a bare `#42` may be eit
 
 ## When a skill says "publish to the issue tracker"
 
-Create a GitHub issue.
+Create a GitHub issue with `gh issue create`.
+
+When the issues form a set with a parent spec and/or ordering between them, wire the relationships natively — do not rely on prose references in the body alone. GitHub has **two independent** relationship types; a set of tickets usually needs both:
+
+- **Parent / child — GitHub sub-issues** (containment hierarchy). Link each ticket as a sub-issue of the parent spec: `gh api --method POST repos/<owner>/<repo>/issues/<parent>/sub_issues -F sub_issue_id=<child-db-id>`, where `<child-db-id>` is the child's numeric **database id** (`gh api repos/<owner>/<repo>/issues/<n> --jq .id`, _not_ the `#number` or `node_id`). Verify with `gh api repos/<owner>/<repo>/issues/<parent>/sub_issues` and the parent's `sub_issues_summary.total`. Where sub-issues aren't enabled, fall back to a task list in the parent body plus a `Part of #<parent>` line at the top of each child. A `## Parent` prose reference in the body is a **supplement to** the native link, never a substitute for it.
+- **Blocking — GitHub native issue dependencies** (ordering). Add an edge with `gh api --method POST repos/<owner>/<repo>/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>`, where `<blocker-db-id>` is the blocker's numeric **database id** (same `--jq .id` lookup). GitHub reports open blockers via `issue_dependencies_summary.blocked_by` (the live gate). Where dependencies aren't available, fall back to a `Blocked by: #<n>, #<n>` line at the top of the child body.
+
+Publish in dependency order (blockers first) so the edges can reference real identifiers, then wire sub-issue links and blocking edges once every id exists.
 
 ## When a skill says "fetch the relevant ticket"
 
