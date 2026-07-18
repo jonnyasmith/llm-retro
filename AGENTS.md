@@ -2,17 +2,17 @@
 
 ## Repository invariants
 
-- TODO
+- Keep this file's summaries aligned with their referenced guidance under `docs/agents/`.
 
 ## Agent skills
 
 ### Issue tracker
 
-Issues are tracked in Azure DevOps Boards for the Platform Interactive project. See `docs/agents/issue-tracker.md`.
+Issues and PRDs are tracked in GitHub Issues for this repository. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
-The default five-role triage vocabulary is represented by Azure DevOps work-item tags. See `docs/agents/triage-labels.md`.
+Triage uses the canonical `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix` labels. See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 
