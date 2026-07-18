@@ -1,0 +1,704 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PROTOTYPE — Metrics Viewer (#7)</title>
+<!--
+  THROWAWAY PROTOTYPE for issue #7 "Specify the metrics viewer".
+  Question: how should the metrics viewer look and behave — which of the 8 Signals
+  surface and how, layout/grouping, interactions (filters, drill-down, the latency
+  hour-of-day + latency-per-token views), and how it coordinates with the retro view.
+
+  Three RADICALLY different variants on one page, switchable via ?variant=A|B|C and a
+  floating bottom bar (arrows + ← → keys). All mock data, in-memory, no persistence.
+  Run: `open docs/prototypes/metrics-viewer.html` (macOS) or drop it in a browser.
+  Not production code — no SvelteKit, no build, no tests. Fold the winner into the
+  real app when the spec lands.
+-->
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<style>
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel2: #1c232d; --line: #2a323d;
+    --ink: #e6edf3; --muted: #8b98a5; --dim: #5c6773;
+    --accent: #4c8dff; --accent2: #7c5cff; --good: #3fb950; --warn: #d29922; --bad: #f85149;
+    --claude: #d97757; --codex: #10a37f; --pi: #a371f7;
+    --radius: 12px; --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--ink); font-family: var(--sans);
+    font-size: 14px; line-height: 1.4; -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  h1,h2,h3,h4 { margin: 0; font-weight: 600; }
+  .muted { color: var(--muted); }
+  .dim { color: var(--dim); }
+  .mono { font-family: var(--mono); }
+  button { font-family: inherit; cursor: pointer; }
+
+  /* ---------- App chrome (shared across variants) ---------- */
+  .app { display: flex; flex-direction: column; min-height: 100vh; }
+  .topbar {
+    display: flex; align-items: center; gap: 20px; padding: 12px 22px;
+    border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 20;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: .2px; }
+  .brand .logo { width: 26px; height: 26px; border-radius: 7px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2)); }
+  .brand small { font-weight: 500; color: var(--dim); }
+  .viewtabs { display: flex; gap: 4px; background: var(--panel2); padding: 3px; border-radius: 9px; }
+  .viewtabs button {
+    border: 0; background: transparent; color: var(--muted); padding: 6px 14px; border-radius: 7px;
+    font-weight: 600; font-size: 13px;
+  }
+  .viewtabs button.on { background: var(--accent); color: #fff; }
+  .viewtabs button:not(.on):hover { color: var(--ink); }
+  .spacer { flex: 1; }
+  .scope-note { font-size: 12px; color: var(--dim); }
+
+  /* ---------- Filter bar (shared) ---------- */
+  .filters {
+    display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+    padding: 10px 22px; border-bottom: 1px solid var(--line); background: var(--panel);
+    position: sticky; top: 57px; z-index: 15;
+  }
+  .fgroup { display: flex; align-items: center; gap: 7px; }
+  .fgroup > .flabel { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--dim); }
+  .pill {
+    border: 1px solid var(--line); background: var(--panel2); color: var(--muted);
+    padding: 5px 11px; border-radius: 20px; font-size: 12.5px; font-weight: 600;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .pill.on { color: var(--ink); border-color: transparent; }
+  .pill .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .pill.tool-claude.on { background: rgba(217,119,87,.18); border-color: var(--claude); }
+  .pill.tool-codex.on  { background: rgba(16,163,127,.18); border-color: var(--codex); }
+  .pill.tool-pi.on     { background: rgba(163,113,247,.18); border-color: var(--pi); }
+  .pill.model.on { background: rgba(76,141,255,.16); border-color: var(--accent); }
+  select, .daterange button {
+    background: var(--panel2); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 8px; padding: 5px 10px; font-size: 12.5px; font-family: inherit;
+  }
+  .daterange { display: flex; gap: 4px; }
+  .daterange button { color: var(--muted); font-weight: 600; }
+  .daterange button.on { background: var(--accent); color: #fff; border-color: transparent; }
+  .filter-summary { font-size: 12px; color: var(--dim); }
+  .filter-summary b { color: var(--muted); }
+
+  /* ---------- Generic panels ---------- */
+  .main { flex: 1; padding: 22px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 16px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .card h3 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .card .hint { font-size: 11.5px; color: var(--dim); }
+  .chart { width: 100%; height: 220px; }
+  .kpi { font-size: 30px; font-weight: 700; letter-spacing: -.5px; }
+  .kpi small { font-size: 13px; font-weight: 600; color: var(--muted); margin-left: 4px; }
+  .delta.up { color: var(--good); } .delta.down { color: var(--bad); }
+  .toggle { display: inline-flex; background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .toggle button { border: 0; background: transparent; color: var(--muted); padding: 5px 12px; font-size: 12px; font-weight: 600; }
+  .toggle button.on { background: var(--accent); color: #fff; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .badge { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 5px; }
+  .badge.claude { background: rgba(217,119,87,.18); color: var(--claude); }
+  .badge.codex  { background: rgba(16,163,127,.18); color: var(--codex); }
+  .badge.pi     { background: rgba(163,113,247,.18); color: var(--pi); }
+  .basis-recon { color: var(--warn); border-bottom: 1px dashed var(--warn); cursor: help; }
+
+  /* ---------- Variant A: overview grid ---------- */
+  .kpirow { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-bottom: 18px; }
+  .grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; }
+  .col2 { grid-column: span 2; } .col3 { grid-column: span 3; } .col4 { grid-column: span 4; } .col6 { grid-column: span 6; }
+
+  /* ---------- Variant B: master-detail ---------- */
+  .md { display: grid; grid-template-columns: 380px 1fr; gap: 0; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; min-height: 70vh; }
+  .md-list { border-right: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; }
+  .md-agg { padding: 12px 14px; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; }
+  .md-agg .k { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .4px; }
+  .md-agg .v { font-size: 17px; font-weight: 700; }
+  .md-listhead { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+  .md-rows { overflow-y: auto; flex: 1; max-height: 62vh; }
+  .srow { display: grid; grid-template-columns: 1fr auto; gap: 4px; padding: 10px 14px; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .srow:hover { background: var(--panel2); }
+  .srow.sel { background: rgba(76,141,255,.12); box-shadow: inset 3px 0 0 var(--accent); }
+  .srow .top { display: flex; align-items: center; gap: 8px; }
+  .srow .title { font-weight: 600; font-size: 13px; }
+  .srow .meta { font-size: 11.5px; color: var(--dim); }
+  .srow .spark { width: 90px; height: 26px; }
+  .md-detail { padding: 20px; overflow-y: auto; max-height: 70vh; }
+  .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+
+  /* ---------- Variant C: question-driven ---------- */
+  .cwrap { display: grid; grid-template-columns: 210px 1fr; gap: 24px; }
+  .crail { position: sticky; top: 120px; align-self: start; display: flex; flex-direction: column; gap: 6px; }
+  .crail a { padding: 8px 12px; border-radius: 8px; color: var(--muted); font-weight: 600; font-size: 13px; border-left: 2px solid transparent; }
+  .crail a.on, .crail a:hover { background: var(--panel); color: var(--ink); border-left-color: var(--accent); }
+  .section { margin-bottom: 44px; scroll-margin-top: 130px; }
+  .section .q { font-size: 22px; font-weight: 700; letter-spacing: -.3px; margin-bottom: 4px; }
+  .section .sub { color: var(--muted); margin-bottom: 16px; max-width: 720px; }
+  .verdict { border-left: 3px solid var(--accent); background: var(--panel); border-radius: 0 10px 10px 0; padding: 12px 16px; margin-top: 14px; }
+  .verdict .lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--accent); font-weight: 700; }
+  .verdict a { font-weight: 600; }
+  .heroband { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+
+  /* ---------- Floating switcher ---------- */
+  .switcher {
+    position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); z-index: 100;
+    display: flex; align-items: center; gap: 4px; background: #05070a;
+    border: 1px solid #30363d; border-radius: 999px; padding: 6px 8px;
+    box-shadow: 0 10px 40px rgba(0,0,0,.6); font-family: var(--mono);
+  }
+  .switcher button { border: 0; background: transparent; color: var(--ink); width: 30px; height: 30px; border-radius: 50%; font-size: 16px; }
+  .switcher button:hover { background: #1c232d; }
+  .switcher .label { padding: 0 12px; font-size: 13px; white-space: nowrap; }
+  .switcher .label b { color: var(--accent); }
+  .switcher .tag { font-size: 10px; color: var(--dim); margin-left: 8px; text-transform: uppercase; letter-spacing: .5px; }
+  .drilltip { color: var(--dim); font-size: 11.5px; font-style: italic; }
+</style>
+</head>
+<body>
+<div id="app" class="app"></div>
+<div class="switcher" id="switcher"></div>
+
+<script>
+/* =====================================================================
+   MOCK DATA  — deterministic, in-memory. Encodes the 8 v1 Signals (#4).
+   ===================================================================== */
+let _seed = 1337;
+function rnd() { _seed = (_seed * 1664525 + 1013904223) % 4294967296; return _seed / 4294967296; }
+function pick(a) { return a[Math.floor(rnd() * a.length)]; }
+function ri(lo, hi) { return lo + Math.floor(rnd() * (hi - lo + 1)); }
+
+const TOOLS = ["claude", "codex", "pi"];
+const MODELS = {
+  claude: ["claude-opus-4", "claude-sonnet-4"],
+  codex:  ["gpt-5-codex", "o4-mini"],
+  pi:     ["claude-opus-4", "gpt-5-codex", "llama-3.3-70b"],
+};
+const TOOLNAMES = ["read", "edit", "bash", "grep", "glob", "write", "task", "lsp"];
+const TASKS = ["refactor auth module","debug latency regression","add ECharts viewer","port config loader",
+  "write migration","triage flaky tests","implement job runner","normalise session model","review PR #204",
+  "wire Docker socket","extract signals job","fix pgvector index","spec metrics viewer","dictate retro notes"];
+
+const NOW = new Date("2026-07-18T18:00:00Z");
+function daysAgo(d, hourLocal) {
+  const dt = new Date(NOW); dt.setUTCDate(dt.getUTCDate() - d);
+  dt.setUTCHours(hourLocal, ri(0,59), 0, 0); return dt;
+}
+
+function makeSession(i) {
+  const tool = pick(TOOLS);
+  const models = MODELS[tool];
+  const day = ri(0, 20);
+  // start hour skews toward working hours; some afternoon sessions
+  const startHour = pick([9,10,10,11,13,14,14,15,16,16,20,21]);
+  const start = daysAgo(day, startHour);
+  const turns = ri(4, 60);
+  const durationMin = Math.round(turns * (rnd() * 2.4 + 0.8) + ri(0, 25));
+  const kind = rnd() < 0.18 ? "subagent" : "root";
+
+  // model mix: primary model + occasional secondary
+  const primary = pick(models);
+  const secondary = rnd() < 0.4 ? pick(models.filter(m => m !== primary)) : null;
+  const mix = {};
+  if (secondary) { const s = rnd()*0.4+0.15; mix[primary]=1-s; mix[secondary]=s; }
+  else mix[primary] = 1;
+
+  // tokens — codex is reconstructed (basis)
+  const inTok = ri(20000, 900000), outTok = ri(8000, 220000), cacheTok = ri(0, 1500000);
+  const basis = tool === "codex" ? "reconstructed" : "exact";
+
+  // subagents
+  const subCount = kind === "root" ? (rnd() < 0.5 ? ri(1, 6) : 0) : 0;
+  const subTokens = subCount ? ri(30000, 400000) * subCount : 0;
+
+  // tool usage
+  const tools = {}; const nTools = ri(2, 6);
+  for (let t = 0; t < nTools; t++) { const n = pick(TOOLNAMES); tools[n] = (tools[n]||0) + ri(1, 40); }
+
+  // latency samples: per model-response gap. AFTERNOON slowdown baked into per-token rate.
+  const nLat = Math.min(turns, ri(6, 40));
+  const latency = [];
+  let activeMs = 0;
+  for (let s = 0; s < nLat; s++) {
+    const inst = new Date(start.getTime() + s * (durationMin*60000/nLat));
+    const hourLocal = (inst.getUTCHours() + 1) % 24; // Europe/London ~ +1 (DST) mock
+    const outT = ri(120, 3800);
+    // base rate ms/token, afternoon (13-17) penalty
+    let rate = 5.5 + rnd()*2.5;
+    if (hourLocal >= 13 && hourLocal <= 17) rate *= 1.32 + rnd()*0.25;
+    if (hourLocal >= 22 || hourLocal <= 6) rate *= 1.08;
+    const ms = Math.round(outT * rate + ri(300, 1500));
+    latency.push({ instant: inst, ms, outTokens: outT });
+    activeMs += ms;
+  }
+
+  return {
+    id: "S" + String(i).padStart(3, "0"),
+    title: pick(TASKS), tool, kind, start, durationMin, turns, mix,
+    tokens: { in: inTok, out: outTok, cache: cacheTok, basis },
+    subagents: { count: subCount, tokens: subTokens },
+    tools, latency, activeMs,
+    dominantModel: primary,
+  };
+}
+const ALL = Array.from({ length: 64 }, (_, i) => makeSession(i + 1));
+
+/* ---------- filter state ---------- */
+const state = {
+  view: "metrics",
+  variant: new URLSearchParams(location.search).get("variant") || "A",
+  tools: new Set(TOOLS),
+  models: new Set(),           // empty = all
+  days: 21,
+  selected: ALL[0].id,         // variant B detail
+  latencyMode: "raw",          // raw | perToken  (variant A/C)
+};
+
+function allModels() {
+  const s = new Set(); ALL.forEach(x => Object.keys(x.mix).forEach(m => s.add(m))); return [...s].sort();
+}
+function filtered() {
+  const cut = new Date(NOW.getTime() - state.days*86400000);
+  return ALL.filter(s =>
+    state.tools.has(s.tool) &&
+    (state.models.size === 0 || Object.keys(s.mix).some(m => state.models.has(m))) &&
+    s.start >= cut
+  );
+}
+
+/* ---------- aggregation helpers ---------- */
+const fmtK = n => n >= 1e6 ? (n/1e6).toFixed(1)+"M" : n >= 1e3 ? (n/1e3).toFixed(0)+"k" : ""+n;
+const fmtMin = m => m >= 60 ? (m/60).toFixed(1)+"h" : m+"m";
+function agg(sessions) {
+  const a = {
+    sessions: sessions.length, turns: 0,
+    tokIn: 0, tokOut: 0, tokCache: 0, reconShare: 0,
+    subCount: 0, subTokens: 0, totalTokens: 0,
+    durationMin: 0, activeMs: 0,
+    modelTokens: {}, toolCounts: {}, latByHour: Array.from({length:24},()=>({sumMs:0,sumTok:0,n:0})),
+  };
+  let reconTok = 0;
+  sessions.forEach(s => {
+    a.turns += s.turns;
+    a.tokIn += s.tokens.in; a.tokOut += s.tokens.out; a.tokCache += s.tokens.cache;
+    const tt = s.tokens.in + s.tokens.out;
+    a.totalTokens += tt; if (s.tokens.basis === "reconstructed") reconTok += tt;
+    a.subCount += s.subagents.count; a.subTokens += s.subagents.tokens;
+    a.durationMin += s.durationMin; a.activeMs += s.activeMs;
+    Object.entries(s.mix).forEach(([m, share]) => a.modelTokens[m] = (a.modelTokens[m]||0) + tt*share);
+    Object.entries(s.tools).forEach(([t, c]) => a.toolCounts[t] = (a.toolCounts[t]||0) + c);
+    s.latency.forEach(l => {
+      const h = (l.instant.getUTCHours() + 1) % 24;
+      a.latByHour[h].sumMs += l.ms; a.latByHour[h].sumTok += l.outTokens; a.latByHour[h].n++;
+    });
+  });
+  a.reconShare = a.totalTokens ? reconTok / a.totalTokens : 0;
+  return a;
+}
+function hourSeries(a, mode) {
+  return a.latByHour.map(h => !h.n ? null :
+    mode === "perToken" ? +(h.sumMs / h.sumTok).toFixed(2) : +(h.sumMs / h.n / 1000).toFixed(2));
+}
+
+/* ---------- ECharts registry (dispose on rerender) ---------- */
+let charts = [];
+function disposeCharts() { charts.forEach(c => { try { c.dispose(); } catch(e){} }); charts = []; }
+const AX = { text: "#8b98a5", line: "#2a323d", split: "#1c232d" };
+function mk(el, option) {
+  const c = echarts.init(el, null, { renderer: "canvas" });
+  c.setOption(option); charts.push(c); return c;
+}
+const baseGrid = { left: 44, right: 16, top: 24, bottom: 28 };
+const axStyle = { axisLine:{lineStyle:{color:AX.line}}, axisLabel:{color:AX.text,fontSize:11}, splitLine:{lineStyle:{color:AX.split}} };
+window.addEventListener("resize", () => charts.forEach(c => c.resize()));
+
+/* =====================================================================
+   CHART BUILDERS (reused across variants)
+   ===================================================================== */
+function chartLatencyHour(el, a, mode) {
+  const data = hourSeries(a, mode);
+  mk(el, {
+    grid: baseGrid, tooltip: { trigger: "axis" },
+    xAxis: { type: "category", data: [...Array(24).keys()].map(h => String(h).padStart(2,"0")), ...axStyle,
+      name: "hour (Europe/London)", nameLocation: "middle", nameGap: 32, nameTextStyle:{color:AX.text,fontSize:10} },
+    yAxis: { type: "value", ...axStyle,
+      name: mode==="perToken" ? "ms / output-token" : "avg latency (s)", nameTextStyle:{color:AX.text,fontSize:10} },
+    series: [{ type: "bar", data, itemStyle: { color: p =>
+      (p.dataIndex>=13 && p.dataIndex<=17) ? "#d29922" : "#4c8dff", borderRadius:[3,3,0,0] } }],
+  });
+}
+function chartModelMix(el, a) {
+  const data = Object.entries(a.modelTokens).map(([m, v]) => ({ name: m, value: Math.round(v) }));
+  mk(el, {
+    tooltip: { trigger: "item", formatter: p => `${p.name}<br>${fmtK(p.value)} tok · ${p.percent}%` },
+    legend: { bottom: 0, textStyle: { color: AX.text, fontSize: 11 } },
+    series: [{ type: "pie", radius: ["45%","70%"], center:["50%","44%"], avoidLabelOverlap: true,
+      label: { show: false }, data,
+      color: ["#4c8dff","#7c5cff","#3fb950","#d29922","#f85149","#10a37f"] }],
+  });
+}
+function chartTokens(el, a) {
+  mk(el, {
+    grid: baseGrid, tooltip: { trigger: "axis" }, legend: { top:0, textStyle:{color:AX.text,fontSize:11} },
+    xAxis: { type: "category", data: ["input","output","cache"], ...axStyle },
+    yAxis: { type: "value", ...axStyle, axisLabel:{color:AX.text,fontSize:11,formatter:fmtK} },
+    series: [{ type: "bar", data: [
+      { value: a.tokIn, itemStyle:{color:"#4c8dff"} },
+      { value: a.tokOut, itemStyle:{color:"#7c5cff"} },
+      { value: a.tokCache, itemStyle:{color:"#3fb950"} },
+    ], barWidth: "50%", itemStyle:{borderRadius:[4,4,0,0]} }],
+  });
+}
+function chartTools(el, a) {
+  const ent = Object.entries(a.toolCounts).sort((x,y)=>x[1]-y[1]);
+  mk(el, {
+    grid: { left: 60, right: 24, top: 10, bottom: 20 }, tooltip: { trigger: "axis" },
+    xAxis: { type: "value", ...axStyle }, yAxis: { type: "category", data: ent.map(e=>e[0]), ...axStyle },
+    series: [{ type: "bar", data: ent.map(e=>e[1]), itemStyle:{color:"#10a37f",borderRadius:[0,4,4,0]}, barWidth:"60%" }],
+  });
+}
+function chartDurationVsTurns(el, sessions) {
+  const col = { claude:"#d97757", codex:"#10a37f", pi:"#a371f7" };
+  const byTool = {}; sessions.forEach(s => (byTool[s.tool] ||= []).push([s.turns, s.durationMin, s.id]));
+  return mk(el, {
+    grid: baseGrid, tooltip: { formatter: p => `${p.data[2]} · ${p.data[0]} turns · ${fmtMin(p.data[1])}` },
+    legend: { top: 0, textStyle:{color:AX.text,fontSize:11} },
+    xAxis: { type: "value", name:"turns", ...axStyle, nameTextStyle:{color:AX.text} },
+    yAxis: { type: "value", name:"duration (min)", ...axStyle, nameTextStyle:{color:AX.text} },
+    series: Object.entries(byTool).map(([t, d]) => ({ name: t, type: "scatter", data: d, symbolSize: 9,
+      itemStyle:{color: col[t], opacity:.8} })),
+  });
+}
+function chartSubagentShare(el, a) {
+  const rootTok = a.totalTokens - a.subTokens;
+  mk(el, {
+    tooltip:{trigger:"item", formatter: p=>`${p.name}<br>${fmtK(p.value)} tok · ${p.percent}%`},
+    series: [{ type:"pie", radius:["55%","78%"], center:["50%","50%"], label:{show:false},
+      data:[{name:"root sessions",value:Math.round(rootTok),itemStyle:{color:"#2a323d"}},
+            {name:"subagents",value:Math.round(a.subTokens),itemStyle:{color:"#7c5cff"}}] }],
+  });
+}
+function chartSpark(el, s) {
+  mk(el, { grid:{left:0,right:0,top:2,bottom:2}, xAxis:{type:"category",show:false,data:s.latency.map((_,i)=>i)},
+    yAxis:{type:"value",show:false}, series:[{type:"line",data:s.latency.map(l=>l.ms),showSymbol:false,
+      lineStyle:{width:1.5,color:"#4c8dff"},areaStyle:{color:"rgba(76,141,255,.15)"}}] });
+}
+
+/* =====================================================================
+   SHARED CHROME
+   ===================================================================== */
+function chrome(bodyHTML) {
+  const f = filtered(); const a = agg(f);
+  const modelPills = allModels().map(m =>
+    `<span class="pill model ${state.models.has(m)?"on":""}" data-model="${m}">${m}</span>`).join("");
+  const toolPill = t =>
+    `<span class="pill tool-${t} ${state.tools.has(t)?"on":""}" data-tool="${t}"><span class="dot" style="background:var(--${t})"></span>${t}</span>`;
+  const dr = [[7,"7d"],[21,"21d"],[90,"90d"]].map(([d,l]) =>
+    `<button class="${state.days===d?"on":""}" data-days="${d}">${l}</button>`).join("");
+  return `
+  <div class="topbar">
+    <div class="brand"><span class="logo"></span> LLM Retro <small>· prototype</small></div>
+    <div class="viewtabs">
+      <button class="${state.view==="metrics"?"on":""}" data-view="metrics">Metrics</button>
+      <button class="${state.view==="retro"?"on":""}" data-view="retro">Retro / Insights</button>
+    </div>
+    <div class="spacer"></div>
+    <div class="scope-note">${a.sessions} sessions · ${fmtK(a.totalTokens)} tokens in scope</div>
+  </div>
+  <div class="filters">
+    <div class="fgroup"><span class="flabel">Tool</span>${TOOLS.map(toolPill).join("")}</div>
+    <div class="fgroup"><span class="flabel">Model</span>${modelPills}</div>
+    <div class="fgroup"><span class="flabel">Date</span><div class="daterange">${dr}</div></div>
+    <div class="spacer"></div>
+    <div class="filter-summary">Filtered: <b>${a.sessions}</b>/${ALL.length} sessions · ${state.models.size?[...state.models].join(", "):"all models"}</div>
+  </div>
+  <div class="main">${state.view==="retro" ? retroStub() : bodyHTML}</div>`;
+}
+function retroStub() {
+  return `<div style="max-width:640px;margin:40px auto;text-align:center;color:var(--muted)">
+    <h2 style="color:var(--ink);margin-bottom:8px">Retro / Insights view</h2>
+    <p>Owned by <a href="#">#8</a>. Same filtered dataset (${filtered().length} sessions), Inference layer instead of Signals.
+    This toggle demonstrates the <b>coordination</b>: filters + selected session persist when you switch views.</p>
+    <p class="dim">Flip back to Metrics via the tab above.</p></div>`;
+}
+
+/* =====================================================================
+   VARIANT A — OVERVIEW DASHBOARD GRID
+   Overview-first: headline KPI strip, then a scannable card grid, one card
+   per Signal group. Primary affordance: see everything at once, drill via cards.
+   ===================================================================== */
+function variantA() {
+  const f = filtered(); const a = agg(f);
+  const recon = a.reconShare > 0
+    ? `<span class="basis-recon" title="Codex totals reconstructed by diffing usage — not exact">${(a.reconShare*100).toFixed(0)}% reconstructed</span>`
+    : `exact`;
+  const kpi = (v, l, sub) => `<div class="card"><div class="kpi">${v}</div><h3>${l}</h3><div class="hint">${sub}</div></div>`;
+  const body = `
+    <div class="kpirow">
+      ${kpi(a.sessions, "Sessions", "in current scope")}
+      ${kpi(a.turns, "Turns", "Σ derived turns")}
+      ${kpi(fmtK(a.totalTokens), "Tokens", recon)}
+      ${kpi(fmtMin(a.durationMin), "Duration", "wall-clock, first→last")}
+      ${kpi(fmtMin(Math.round(a.activeMs/60000)), "Active model time", "Σ per-response latency")}
+    </div>
+    <div class="grid">
+      <div class="card col4">
+        <div class="row"><h3>Response latency by hour</h3><span class="spacer" style="flex:1"></span>
+          <div class="toggle" id="latToggle">
+            <button data-mode="raw" class="${state.latencyMode==="raw"?"on":""}">avg latency</button>
+            <button data-mode="perToken" class="${state.latencyMode==="perToken"?"on":""}">per output-token</button>
+          </div></div>
+        <div class="chart" id="cA_lat"></div>
+        <div class="hint">Amber = 13:00–17:00. Per-token normalises out "it just wrote more" — the honest slowness test.</div>
+      </div>
+      <div class="card col2"><h3>Model mix</h3><div class="chart" id="cA_mix"></div></div>
+      <div class="card col2"><h3>Token usage</h3><div class="chart" id="cA_tok"></div></div>
+      <div class="card col2"><h3>Tool usage</h3><div class="chart" id="cA_tools" style="height:220px"></div></div>
+      <div class="card col2"><h3>Subagent token share</h3><div class="chart" id="cA_sub"></div>
+        <div class="hint">${a.subCount} child sessions · ${fmtK(a.subTokens)} tok</div></div>
+      <div class="card col6"><div class="row"><h3>Session shape — duration vs turns</h3>
+        <span class="drilltip" style="margin-left:auto">click a point → drill to session (variant B)</span></div>
+        <div class="chart" id="cA_scatter" style="height:280px"></div></div>
+    </div>`;
+  document.getElementById("app").innerHTML = chrome(body);
+  wireChrome();
+  chartLatencyHour(byId("cA_lat"), a, state.latencyMode);
+  chartModelMix(byId("cA_mix"), a);
+  chartTokens(byId("cA_tok"), a);
+  chartTools(byId("cA_tools"), a);
+  chartSubagentShare(byId("cA_sub"), a);
+  const sc = chartDurationVsTurns(byId("cA_scatter"), f);
+  sc.on("click", p => { state.selected = p.data[2]; state.variant = "B"; syncURL(); render(); });
+  byId("latToggle").querySelectorAll("button").forEach(b =>
+    b.onclick = () => { state.latencyMode = b.dataset.mode; render(); });
+}
+
+/* =====================================================================
+   VARIANT B — MASTER-DETAIL SESSION LIST
+   List-first: scannable session rows (badges + latency sparkline) on the left,
+   full per-session Signal breakdown on the right. Primary affordance: browse &
+   inspect one session deeply. Coordination: detail has its own Metrics|Retro tab.
+   ===================================================================== */
+function variantB() {
+  const f = filtered(); const a = agg(f);
+  if (!f.find(s => s.id === state.selected)) state.selected = f[0]?.id;
+  const rows = f.map(s => {
+    const tt = s.tokens.in + s.tokens.out;
+    return `<div class="srow ${s.id===state.selected?"sel":""}" data-id="${s.id}">
+      <div><div class="top"><span class="badge ${s.tool}">${s.tool}</span>
+        <span class="title">${s.title}</span></div>
+        <div class="meta">${s.start.toISOString().slice(0,10)} · ${s.turns} turns · ${fmtK(tt)} tok · ${fmtMin(s.durationMin)}${s.subagents.count?` · ${s.subagents.count} sub`:""}</div></div>
+      <div class="spark" id="spk_${s.id}"></div></div>`;
+  }).join("");
+  const body = `
+    <div class="md">
+      <div class="md-list">
+        <div class="md-agg">
+          <div><div class="k">Sessions</div><div class="v">${a.sessions}</div></div>
+          <div><div class="k">Tokens</div><div class="v">${fmtK(a.totalTokens)}</div></div>
+          <div><div class="k">Turns</div><div class="v">${a.turns}</div></div>
+          <div><div class="k">Active time</div><div class="v">${fmtMin(Math.round(a.activeMs/60000))}</div></div>
+        </div>
+        <div class="md-listhead"><span>Session</span><span class="spacer" style="flex:1"></span><span>latency</span></div>
+        <div class="md-rows" id="mdRows">${rows}</div>
+      </div>
+      <div class="md-detail" id="mdDetail"></div>
+    </div>`;
+  document.getElementById("app").innerHTML = chrome(body);
+  wireChrome();
+  f.forEach(s => chartSpark(byId("spk_"+s.id), s));
+  byId("mdRows").querySelectorAll(".srow").forEach(r =>
+    r.onclick = () => { state.selected = r.dataset.id; render(); });
+  renderDetail(f.find(s => s.id === state.selected));
+}
+function renderDetail(s) {
+  if (!s) { byId("mdDetail").innerHTML = `<div class="muted">No session in scope.</div>`; return; }
+  const A = agg([s]);
+  const tt = s.tokens.in + s.tokens.out;
+  const basis = s.tokens.basis === "reconstructed"
+    ? `<span class="basis-recon" title="Reconstructed by diffing — not exact">reconstructed</span>` : "exact";
+  byId("mdDetail").innerHTML = `
+    <div class="row"><span class="badge ${s.tool}">${s.tool}</span>
+      <h2 style="font-size:19px">${s.title}</h2>
+      <span class="spacer" style="flex:1"></span>
+      <div class="viewtabs"><button class="on">Metrics</button><button data-detailretro="${s.id}">Retro</button></div></div>
+    <div class="muted" style="margin-top:4px">${s.id} · ${s.start.toISOString().replace("T"," ").slice(0,16)} UTC · ${s.kind}${s.kind==="root"&&s.subagents.count?` · ${s.subagents.count} subagents`:""}</div>
+    <div class="detail-grid">
+      <div class="card"><h3>Turn count</h3><div class="kpi">${s.turns}<small>turns</small></div></div>
+      <div class="card"><h3>Token usage · ${basis}</h3><div class="kpi">${fmtK(tt)}</div>
+        <div class="hint">in ${fmtK(s.tokens.in)} · out ${fmtK(s.tokens.out)} · cache ${fmtK(s.tokens.cache)}</div></div>
+      <div class="card"><h3>Duration</h3><div class="kpi">${fmtMin(s.durationMin)}</div>
+        <div class="hint">active ${fmtMin(Math.round(s.activeMs/60000))} (${Math.round(s.activeMs/60000/s.durationMin*100)}% of wall)</div></div>
+      <div class="card"><h3>Subagent usage</h3><div class="kpi">${s.subagents.count}<small>children</small></div>
+        <div class="hint">${fmtK(s.subagents.tokens)} tok · ${tt?Math.round(s.subagents.tokens/(tt+s.subagents.tokens)*100):0}% of tree</div></div>
+      <div class="card"><h3>Model mix</h3><div class="chart" id="d_mix" style="height:180px"></div></div>
+      <div class="card"><h3>Tool usage</h3><div class="chart" id="d_tools" style="height:180px"></div></div>
+      <div class="card" style="grid-column:span 2">
+        <div class="row"><h3>Response latency by hour</h3><span class="spacer" style="flex:1"></span>
+          <div class="toggle" id="d_latToggle">
+            <button data-mode="raw" class="${state.latencyMode==="raw"?"on":""}">avg latency</button>
+            <button data-mode="perToken" class="${state.latencyMode==="perToken"?"on":""}">per output-token</button>
+          </div></div>
+        <div class="chart" id="d_lat" style="height:200px"></div></div>
+    </div>`;
+  chartModelMix(byId("d_mix"), A);
+  chartTools(byId("d_tools"), A);
+  chartLatencyHour(byId("d_lat"), A, state.latencyMode);
+  byId("d_latToggle").querySelectorAll("button").forEach(b =>
+    b.onclick = () => { state.latencyMode = b.dataset.mode; renderDetail(s); });
+  byId("mdDetail").querySelector("[data-detailretro]").onclick = () => { state.view = "retro"; render(); };
+}
+
+/* =====================================================================
+   VARIANT C — QUESTION-DRIVEN NARRATIVE
+   Organised by the HYPOTHESES the Signals answer, not by Signal. Latency is the
+   hero. Left rail = questions. Each section ends with a verdict linking to Retro.
+   ===================================================================== */
+function variantC() {
+  const f = filtered(); const a = agg(f);
+  const rawH = hourSeries(a, "raw"), ptH = hourSeries(a, "perToken");
+  const afternoon = avg(ptH.slice(13,18)), rest = avg(ptH.filter((_,i)=>i<13||i>17));
+  const slower = rest ? ((afternoon/rest - 1) * 100) : 0;
+  const body = `
+  <div class="cwrap">
+    <nav class="crail">
+      <a href="#q1" class="on">Claude slower in the PM?</a>
+      <a href="#q2">Where do tokens go?</a>
+      <a href="#q3">Session shape</a>
+      <a href="#q4">Tooling footprint</a>
+    </nav>
+    <div>
+      <section class="section" id="q1">
+        <div class="q">Is the model slower in the afternoon?</div>
+        <div class="sub">Per-response latency bucketed by hour (Europe/London, DST-aware). The <b>per output-token</b> rate is the honest test — it factors out "it simply wrote more."</div>
+        <div class="heroband">
+          <div class="card"><div class="row"><h3>Latency by hour of day</h3><span class="spacer" style="flex:1"></span>
+            <div class="toggle" id="c_latToggle">
+              <button data-mode="raw" class="${state.latencyMode==="raw"?"on":""}">avg latency</button>
+              <button data-mode="perToken" class="${state.latencyMode==="perToken"?"on":""}">per output-token</button>
+            </div></div>
+            <div class="chart" id="cC_lat" style="height:300px"></div></div>
+          <div class="card"><h3>PM vs rest (per-token)</h3>
+            <div class="kpi ${slower>0?"delta up":"delta down"}">${slower>0?"+":""}${slower.toFixed(0)}%</div>
+            <div class="hint">13:00–17:00 rate vs the rest of the day. ${afternoon.toFixed(2)} vs ${rest.toFixed(2)} ms/token.</div>
+            <div class="chart" id="cC_gauge" style="height:150px"></div></div>
+        </div>
+        <div class="verdict"><span class="lbl">Reads as →</span> Afternoon per-token latency runs
+          <b>${slower.toFixed(0)}% higher</b> in scope. <a href="#" data-toretro>Open the Retro thread on this →</a></div>
+      </section>
+
+      <section class="section" id="q2">
+        <div class="q">Where do my tokens go?</div>
+        <div class="sub">Model mix and the subagent share of the whole tree — what's actually consuming the budget.</div>
+        <div class="grid"><div class="card col3"><h3>By model</h3><div class="chart" id="cC_mix" style="height:260px"></div></div>
+          <div class="card col3"><h3>Root vs subagent tokens</h3><div class="chart" id="cC_sub" style="height:260px"></div>
+            <div class="hint">${a.subCount} child sessions · ${fmtK(a.subTokens)} tok delegated</div></div></div>
+        <div class="verdict"><span class="lbl">Reads as →</span> Subagents carry
+          <b>${a.totalTokens?Math.round(a.subTokens/(a.totalTokens)*100):0}%</b> of tokens. <a href="#" data-toretro>See delegation retro →</a></div>
+      </section>
+
+      <section class="section" id="q3">
+        <div class="q">What shape are my sessions?</div>
+        <div class="sub">Duration vs turns — many short loops or few long grinds? Not a quality headline, a shape axis.</div>
+        <div class="card"><div class="chart" id="cC_scatter" style="height:320px"></div></div>
+        <div class="verdict"><span class="lbl">Reads as →</span> ${fmtMin(Math.round(a.durationMin/Math.max(a.sessions,1)))} median wall per session,
+          <b>${Math.round(a.turns/Math.max(a.sessions,1))} turns</b> avg. <a href="#" data-toretro>Retro on loop discipline →</a></div>
+      </section>
+
+      <section class="section" id="q4">
+        <div class="q">What's my tooling footprint?</div>
+        <div class="sub">Which tools the models reach for, across scope.</div>
+        <div class="card"><div class="chart" id="cC_tools" style="height:260px"></div></div>
+      </section>
+    </div>
+  </div>`;
+  document.getElementById("app").innerHTML = chrome(body);
+  wireChrome();
+  chartLatencyHour(byId("cC_lat"), a, state.latencyMode);
+  gauge(byId("cC_gauge"), slower);
+  chartModelMix(byId("cC_mix"), a);
+  chartSubagentShare(byId("cC_sub"), a);
+  chartDurationVsTurns(byId("cC_scatter"), f);
+  chartTools(byId("cC_tools"), a);
+  byId("c_latToggle").querySelectorAll("button").forEach(b =>
+    b.onclick = () => { state.latencyMode = b.dataset.mode; render(); });
+  document.querySelectorAll("[data-toretro]").forEach(el =>
+    el.onclick = e => { e.preventDefault(); state.view = "retro"; render(); });
+  // scrollspy
+  const links = [...document.querySelectorAll(".crail a")];
+  const obs = new IntersectionObserver(es => es.forEach(en => {
+    if (en.isIntersecting) { links.forEach(l => l.classList.toggle("on", l.getAttribute("href") === "#"+en.target.id)); }
+  }), { rootMargin: "-40% 0px -50% 0px" });
+  document.querySelectorAll(".section").forEach(s => obs.observe(s));
+}
+function avg(arr){ const v = arr.filter(x=>x!=null); return v.length ? v.reduce((a,b)=>a+b,0)/v.length : 0; }
+function gauge(el, pct) {
+  mk(el, { series:[{ type:"gauge", startAngle:200, endAngle:-20, min:-30, max:60, radius:"100%", center:["50%","70%"],
+    progress:{show:true,width:12}, axisLine:{lineStyle:{width:12,color:[[0.5,"#3fb950"],[0.75,"#d29922"],[1,"#f85149"]]}},
+    pointer:{width:4}, axisTick:{show:false}, splitLine:{show:false}, axisLabel:{show:false},
+    detail:{formatter:v=>(v>0?"+":"")+v.toFixed(0)+"%",fontSize:18,color:"#e6edf3",offsetCenter:[0,"18%"]},
+    data:[{value:pct}] }] });
+}
+
+/* =====================================================================
+   SHARED WIRING + ROUTER + SWITCHER
+   ===================================================================== */
+const byId = id => document.getElementById(id);
+function wireChrome() {
+  document.querySelectorAll("[data-view]").forEach(b => b.onclick = () => { state.view = b.dataset.view; render(); });
+  document.querySelectorAll("[data-tool]").forEach(b => b.onclick = () => {
+    const t = b.dataset.tool; state.tools.has(t) ? state.tools.delete(t) : state.tools.add(t);
+    if (state.tools.size === 0) TOOLS.forEach(x => state.tools.add(x)); render();
+  });
+  document.querySelectorAll("[data-model]").forEach(b => b.onclick = () => {
+    const m = b.dataset.model; state.models.has(m) ? state.models.delete(m) : state.models.add(m); render();
+  });
+  document.querySelectorAll("[data-days]").forEach(b => b.onclick = () => { state.days = +b.dataset.days; render(); });
+}
+
+const VARIANTS = { A: { name: "Overview dashboard", fn: variantA },
+                   B: { name: "Master–detail list", fn: variantB },
+                   C: { name: "Question-driven", fn: variantC } };
+const KEYS = Object.keys(VARIANTS);
+
+function syncURL() {
+  const u = new URL(location); u.searchParams.set("variant", state.variant);
+  history.replaceState(null, "", u);
+}
+function renderSwitcher() {
+  const cur = VARIANTS[state.variant];
+  byId("switcher").innerHTML =
+    `<button id="prevV" title="previous (←)">‹</button>
+     <span class="label"><b>${state.variant}</b> — ${cur.name}<span class="tag">?variant=</span></span>
+     <button id="nextV" title="next (→)">›</button>`;
+  byId("prevV").onclick = () => cycle(-1);
+  byId("nextV").onclick = () => cycle(1);
+}
+function cycle(d) {
+  const i = KEYS.indexOf(state.variant);
+  state.variant = KEYS[(i + d + KEYS.length) % KEYS.length];
+  syncURL(); render();
+}
+function render() {
+  disposeCharts();
+  if (state.view === "retro") { document.getElementById("app").innerHTML = chrome(""); wireChrome(); }
+  else (VARIANTS[state.variant] || VARIANTS.A).fn();
+  renderSwitcher();
+}
+document.addEventListener("keydown", e => {
+  const t = e.target; if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+  if (e.key === "ArrowLeft") cycle(-1);
+  if (e.key === "ArrowRight") cycle(1);
+});
+if (!KEYS.includes(state.variant)) state.variant = "A";
+syncURL();
+render();
+</script>
+</body>
+</html>
