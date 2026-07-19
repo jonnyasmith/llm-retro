@@ -3,10 +3,10 @@
 
 import { NOW, THEMES } from './data';
 import type { InferenceType, ResolvedTheme, Session } from './types';
-import { formatCompact } from '$lib/format';
+import { formatCompact, formatMinutes } from '$lib/format';
 
 export const fmtK = formatCompact;
-export const fmtMin = (m: number): string => (m >= 60 ? (m / 60).toFixed(1) + 'h' : m + 'm');
+export const fmtMin = formatMinutes;
 
 export interface FilterState {
 	tools: ReadonlySet<string>;

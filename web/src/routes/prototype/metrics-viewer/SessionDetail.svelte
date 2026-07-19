@@ -4,7 +4,9 @@
 	import { latencyHourOption, modelMixOption, toolsOption } from './charts';
 	import { useViewerState } from './viewerState.svelte';
 	import Chart from './Chart.svelte';
-	import { Row, Spacer, Segmented, Badge, Card, CardTitle, Kpi, CardHint, Text } from '$lib/ui';
+	import SessionDetailHeader from '$lib/components/prototypes/SessionDetailHeader.svelte';
+	import TokenBasisLabel from '$lib/components/prototypes/TokenBasisLabel.svelte';
+	import { Row, Spacer, Segmented, Card, CardTitle, Kpi, CardHint } from '$lib/ui';
 
 	let { session }: { session: Session } = $props();
 
@@ -15,29 +17,17 @@
 	const latOption = $derived(latencyHourOption(A, st.latencyMode));
 </script>
 
-<Row>
-	<Badge tone={session.tool}>{session.tool}</Badge>
-	<h2 style="font-size:19px">{session.title}</h2>
-	<Spacer />
-	<Segmented
-		variant="inset"
-		label="Session view"
-		options={[
-			{ value: 'metrics', label: 'Metrics' },
-			{ value: 'insights', label: 'Open in Insights' }
-		]}
-		value="metrics"
-		onchange={(v) => {
-			if (v === 'insights') st.view = 'insights';
-		}}
-	/>
-</Row>
-<Text tone="muted" style="display:block;margin-top:4px">
-	{session.id} · {session.start.toISOString().replace('T', ' ').slice(0, 16)} UTC · {session.kind}{session.kind ===
-		'root' && session.subagents.count
-		? ` · ${session.subagents.count} subagents`
-		: ''}
-</Text>
+<SessionDetailHeader
+	session={{
+		id: session.id,
+		title: session.title,
+		tool: session.tool,
+		start: session.start,
+		kind: session.kind,
+		subagentCount: session.subagents.count
+	}}
+	onOpenInsights={() => (st.view = 'insights')}
+/>
 <div class="detail-grid">
 	<Card>
 		<CardTitle>Turn count</CardTitle>
@@ -45,10 +35,7 @@
 	</Card>
 	<Card>
 		<CardTitle>
-			Token usage · {#if session.tokens.basis === 'reconstructed'}<span
-					class="basis-recon"
-					title="Reconstructed by diffing — not exact">reconstructed</span
-				>{:else}exact{/if}
+			Token usage · <TokenBasisLabel basis={session.tokens.basis} />
 		</CardTitle>
 		<Kpi>{fmtK(tt)}</Kpi>
 		<CardHint>
@@ -108,10 +95,5 @@
 		grid-template-columns: 1fr 1fr;
 		gap: 14px;
 		margin-top: 14px;
-	}
-	.basis-recon {
-		color: var(--warn);
-		border-bottom: 1px dashed var(--warn);
-		cursor: help;
 	}
 </style>

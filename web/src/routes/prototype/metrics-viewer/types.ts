@@ -3,16 +3,14 @@
 // needs — this is provisional data, not the real Normalised Session Model.
 
 import type { Inference } from '$lib/components/prototypes/Inference.types';
+import type { TokenBasis, ToolName } from '$lib/components/prototypes/Session.types';
 
 export type {
 	Inference,
 	InferenceType,
 	Provenance
 } from '$lib/components/prototypes/Inference.types';
-
-export type ToolName = 'claude' | 'codex' | 'pi';
-
-export type TokenBasis = 'exact' | 'reconstructed';
+export type { TokenBasis, ToolName } from '$lib/components/prototypes/Session.types';
 
 export interface LatencySample {
 	instant: Date;
