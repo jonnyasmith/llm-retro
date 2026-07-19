@@ -3,6 +3,47 @@
 // the thing the prototype is exploring the *look* of, not real extraction.
 
 import type { Inference, InferenceType, Session, Theme, ToolName } from './types';
+import type { Job, JobStage } from '$lib/components/prototypes/JobCard.types';
+
+const JOBS: Job[] = [
+	{
+		stage: 'import',
+		title: 'Import sessions',
+		description: 'Normalise Claude/Codex/pi transcripts → Postgres',
+		lastRun: '2h ago',
+		status: 'idle'
+	},
+	{
+		stage: 'analysis',
+		title: 'Extract signals',
+		description: 'Derive the 8 deterministic Signals per session',
+		lastRun: '2h ago',
+		status: 'idle'
+	},
+	{
+		stage: 'analysis',
+		title: 'Infer course-corrections',
+		description: 'LLM pass via agent CLI, headless in-container',
+		lastRun: 'never',
+		status: 'idle'
+	},
+	{
+		stage: 'analysis',
+		title: 'Thematic synthesis',
+		description: 'Map-reduce over Signals + per-session Inferences',
+		lastRun: 'never',
+		status: 'idle'
+	}
+];
+
+const jobsByStage = new Map<JobStage, Job[]>();
+for (const job of JOBS) {
+	const stageJobs = jobsByStage.get(job.stage) ?? [];
+	stageJobs.push(job);
+	jobsByStage.set(job.stage, stageJobs);
+}
+
+export const JOBS_BY_STAGE = [...jobsByStage.entries()];
 
 let seed = 1337;
 function rnd(): number {
