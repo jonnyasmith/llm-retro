@@ -1,6 +1,6 @@
 # Jobs
 
-Self-describing containers that turn raw Sessions into stored data (extraction) and derive facts from it (analysis and the insight layer). Solution-wide terms (Session, Signal, Inference…) live in the root [`../CONTEXT.md`](../CONTEXT.md).
+Self-describing containers that turn raw Sessions into stored data (extraction) and derive facts from it (analysis and the insight layer). Solution-wide terms (Session, Signal, Inference…) live in the root [`domain.md`](../../../docs/agents/domain.md).
 
 ## Language
 

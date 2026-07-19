@@ -4,7 +4,7 @@ A tool for retrospectively reviewing your own AI-coding sessions (Claude, Codex,
 
 ## Language
 
-Solution-wide concepts shared across the whole system. Each app defines its own inner-domain vocabulary in its own `CONTEXT.md` (e.g. `web/CONTEXT.md`, `db/CONTEXT.md`, `jobs/CONTEXT.md`).
+Solution-wide concepts shared across the whole system. Each app defines its own inner-domain vocabulary in its own `docs/agents/domain.md` (e.g. `web/docs/agents/domain.md`, `db/docs/agents/domain.md`, `jobs/docs/agents/domain.md`).
 
 **Session**:
 One recorded conversation between the user and an AI coding tool, from a single transcript on disk.

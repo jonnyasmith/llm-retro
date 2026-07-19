@@ -1,6 +1,6 @@
 # Web
 
-The SvelteKit application: the control plane for LLM Retro and the home of the Viewers. Solution-wide terms (Session, Signal, Inference, Retro…) live in the root [`../CONTEXT.md`](../CONTEXT.md).
+The SvelteKit application: the control plane for LLM Retro and the home of the Viewers. Solution-wide terms (Session, Signal, Inference, Retro…) live in the root [`domain.md`](../../../docs/agents/domain.md).
 
 ## Language
 

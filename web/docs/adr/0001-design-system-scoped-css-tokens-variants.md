@@ -16,4 +16,4 @@ All web UI is composed from a primitive kit in `src/lib/ui/`, styled with Svelte
 - New visual patterns are added as a **variant** (`data-*` branch + widened union) or a new primitive — never by reintroducing global classes.
 - Interactive elements must be primitives (or use the `clickable` action); raw `<a href="#">` / `<div onclick>` controls are disallowed and caught by the warnings-as-errors check.
 - Primitive prop types are the component API; the guide's inventory table is a map, the `.svelte` files are the reference.
-- This is web-context-specific: it lives under `web/docs/adr/` (context-scoped decisions), not the repo-wide `docs/adr/`. Design-system vocabulary (primitive, variant, token) stays in the guide, not the domain glossary — consistent with ADR-0010 keeping build-workflow terms out of `CONTEXT.md`.
+- This is web-context-specific: it lives under `web/docs/adr/` (context-scoped decisions), not the repo-wide `docs/adr/`. Design-system vocabulary (primitive, variant, token) stays in the guide, not the domain glossary — consistent with [ADR-0002](0002-prototypes-as-dev-only-sveltekit-routes.md) keeping build-workflow terms out of `domain.md`.

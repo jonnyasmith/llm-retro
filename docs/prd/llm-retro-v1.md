@@ -4,7 +4,7 @@
 
 A tool for retrospectively reviewing the user's own AI-coding Sessions (Claude Code, Codex, pi) to learn what works and what doesn't over time. It ingests local Session transcripts, extracts a Normalised Session Model, derives deterministic Signals and LLM-derived Inferences, and serves two coordinated Viewers (metrics + retro insights) over one dataset.
 
-Terminology is the `CONTEXT.md` glossary — Session, Tool, Normalised Session Model, Turn, Message, Signal, Inference, Course-correction, Input-noise waste, Dumb zone, Retro, Job, Viewer. This PRD uses those terms exactly.
+Terminology is the `domain.md` glossary — Session, Tool, Normalised Session Model, Turn, Message, Signal, Inference, Course-correction, Input-noise waste, Dumb zone, Retro, Job, Viewer. This PRD uses those terms exactly.
 
 This document is self-contained: a builder should not need the issue thread. Rationale for the hard, surprising decisions lives in the ADRs (linked inline); this PRD states _what_ to build and references _why_ rather than restating it.
 
@@ -14,7 +14,7 @@ This document is self-contained: a builder should not need the issue thread. Rat
 
 Produce a **buildable v1**: a job runner + data store where extraction Jobs normalise Claude/Codex/pi Sessions, analysis Jobs derive Signals and Inferences, and two Viewers render coordinated views over the one extracted dataset.
 
-**Load-bearing constraint — anti-cornering.** v1 must not corner the architecture as it course-corrects. The **framework** (job runner, data store, pluggable Jobs + Viewers) is the durable core; specific Jobs and Viewers accrete over time. Every deferred capability (see §9) must be reachable by _adding_ a labelled image or a derived store, never by redesign. Decisions here are fixed in [ADR-0001](../adr/0001-postgres-single-source-of-truth.md), [ADR-0002](../adr/0002-jobs-as-self-describing-containers.md), [ADR-0003](../adr/0003-polyglot-python-jobs-sveltekit-web.md), [ADR-0004](../adr/0004-inferences-via-subscription-authed-cli-in-container.md).
+**Load-bearing constraint — anti-cornering.** v1 must not corner the architecture as it course-corrects. The **framework** (job runner, data store, pluggable Jobs + Viewers) is the durable core; specific Jobs and Viewers accrete over time. Every deferred capability (see §9) must be reachable by _adding_ a labelled image or a derived store, never by redesign. Decisions here are fixed in [ADR-0001](../adr/0001-postgres-single-source-of-truth.md), [ADR-0002](../adr/0002-jobs-as-self-describing-containers.md), [ADR-0003](../adr/0003-polyglot-python-jobs-sveltekit-web.md), [jobs ADR-0002](../../jobs/docs/adr/0002-inferences-via-subscription-authed-cli-in-container.md).
 
 All Session data is local on one machine; the tool runs as an on-demand Docker Compose stack managed via Portainer. Single-user, local.
 
@@ -61,7 +61,7 @@ Fixed by [#5](https://github.com/jonnyasmith/llm-retro/issues/5). Rationale in t
 
 ## 3. Normalised Session Model
 
-Fixed by [#3](https://github.com/jonnyasmith/llm-retro/issues/3), grounded in the data inventory ([#2](https://github.com/jonnyasmith/llm-retro/issues/2), full findings on branch `research/session-data-inventory`). The model is **lossless-core + verbatim-`raw`**: extraction is mechanical 1:1; all interpretation is deferred to analysis Jobs. Rationale in [ADR-0005](../adr/0005-normalised-session-model-lossless-core-plus-raw.md) (lossless-core + `raw`, per-message model, Codex `basis`), [ADR-0006](../adr/0006-turn-is-a-derived-signal.md) (`Turn` derived, not stored), [ADR-0007](../adr/0007-subagent-runs-are-first-class-sessions.md) (sub-agents as first-class Sessions).
+Fixed by [#3](https://github.com/jonnyasmith/llm-retro/issues/3), grounded in the data inventory ([#2](https://github.com/jonnyasmith/llm-retro/issues/2), full findings on branch `research/session-data-inventory`). The model is **lossless-core + verbatim-`raw`**: extraction is mechanical 1:1; all interpretation is deferred to analysis Jobs. Rationale in [db ADR-0001](../../db/docs/adr/0001-normalised-session-model-lossless-core-plus-raw.md) (lossless-core + `raw`, per-message model, Codex `basis`), [jobs ADR-0001](../../jobs/docs/adr/0001-turn-is-a-derived-signal.md) (`Turn` derived, not stored), [db ADR-0002](../../db/docs/adr/0002-subagent-runs-are-first-class-sessions.md) (sub-agents as first-class Sessions).
 
 ### 3.1 Two layers
 
@@ -133,7 +133,7 @@ Fixed by [#3](https://github.com/jonnyasmith/llm-retro/issues/3), grounded in th
 
 ## 4. Signals (deterministic analysis layer)
 
-Fixed by [#4](https://github.com/jonnyasmith/llm-retro/issues/4). A **Signal** is a deterministic structured fact — a pure function of one Normalised Session: exact, cheap, re-runnable, **no model call**. Interpretive facts are Inferences (§5), not Signals. The deterministic-Signal / interpretive-Inference boundary is fixed in [ADR-0008](../adr/0008-signals-deterministic-inferences-interpretive.md).
+Fixed by [#4](https://github.com/jonnyasmith/llm-retro/issues/4). A **Signal** is a deterministic structured fact — a pure function of one Normalised Session: exact, cheap, re-runnable, **no model call**. Interpretive facts are Inferences (§5), not Signals. The deterministic-Signal / interpretive-Inference boundary is fixed in [ADR-0004](../adr/0004-signals-deterministic-inferences-interpretive.md).
 
 Eight v1 Signals:
 
@@ -154,7 +154,7 @@ Eight v1 Signals:
 
 ## 5. Inferences (LLM analysis layer)
 
-Fixed by [#6](https://github.com/jonnyasmith/llm-retro/issues/6); mechanism in [ADR-0004](../adr/0004-inferences-via-subscription-authed-cli-in-container.md). An **Inference** is an interpretive judgement requiring a model pass. Signals stay the deterministic source of truth; Inferences are **model-derived and non-authoritative**.
+Fixed by [#6](https://github.com/jonnyasmith/llm-retro/issues/6); mechanism in [jobs ADR-0002](../../jobs/docs/adr/0002-inferences-via-subscription-authed-cli-in-container.md). An **Inference** is an interpretive judgement requiring a model pass. Signals stay the deterministic source of truth; Inferences are **model-derived and non-authoritative**.
 
 ### 5.1 v1 Inference Jobs
 
@@ -166,7 +166,7 @@ Fixed by [#6](https://github.com/jonnyasmith/llm-retro/issues/6); mechanism in [
   - **Thematic synthesis** (LLM) — map-reduce over the structured layer → themes. (Embeddings/`pgvector` reserved, not used.)
   - **Dumb-zone aggregate** (**deterministic**, no second LLM pass) — distribution over per-session detection points → the threshold.
 
-### 5.2 Model pass mechanism ([ADR-0004](../adr/0004-inferences-via-subscription-authed-cli-in-container.md))
+### 5.2 Model pass mechanism ([jobs ADR-0002](../../jobs/docs/adr/0002-inferences-via-subscription-authed-cli-in-container.md))
 
 - A **subscription-authed agent CLI, headless, inside the §2.3 one-shot Job container**: default `claude --print --output-format stream-json`, input piped on stdin, authed by `CLAUDE_CODE_OAUTH_TOKEN` (minted via `claude setup-token`, injected as env — no metered API key, no credential mount). Frontier quality, **zero metered cost**, runs local. Pattern from `~/dev/sandcastle`. Ollama = optional fallback.
 - CLI + model is a per-Job `llmretro.job.params` value, **stored per-Job in Postgres, editable from the web UI**, injected at launch. No new mechanism beyond §2.3's param seam.

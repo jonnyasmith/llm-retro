@@ -16,4 +16,4 @@ Throwaway UI prototypes are built as real SvelteKit routes under `src/routes/pro
 - Real-app chrome must live in a route group (e.g. `(app)`) rather than the root layout, so `/prototype` stays clean as the app grows.
 - Prototype-only dependencies (e.g. `echarts`) are `devDependencies`: present at build, pruned for the production runtime, and only ever pulled into the dev-only prototype chunk.
 - The `/prototype/whatever` convention, the reusable `VariantBar`, and the graduation workflow are documented for agents in `web/docs/agents/prototyping.md`; the global `prototype` skill's "obey the project's routing convention" clause resolves there.
-- `web/CONTEXT.md` stays a pure domain glossary; *Prototype* and *graduate* are build-workflow vocabulary defined in `web/docs/agents/prototyping.md`, not the glossary.
+- `web/docs/agents/domain.md` stays a pure domain glossary; _Prototype_ and _graduate_ are build-workflow vocabulary defined in `web/docs/agents/prototyping.md`, not the glossary.

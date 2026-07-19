@@ -1,6 +1,6 @@
 # Database
 
-The store of record: the Normalised Session Model and its migrations — the shape every downstream context reads. Solution-wide terms (Session, Tool, Signal…) live in the root [`../CONTEXT.md`](../CONTEXT.md).
+The store of record: the Normalised Session Model and its migrations — the shape every downstream context reads. Solution-wide terms (Session, Tool, Signal…) live in the root [`domain.md`](../../../docs/agents/domain.md).
 
 ## Language
 

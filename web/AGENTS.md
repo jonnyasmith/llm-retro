@@ -1,13 +1,10 @@
-# Web
+# Web — Agent Guide
 
-The SvelteKit application: the control plane and Viewers. The root [`../AGENTS.md`](../AGENTS.md) also applies.
+The SvelteKit application: the control plane and the Viewers. The root [`../AGENTS.md`](../AGENTS.md) applies here too — including its _read before you name_ and _read before you decide_ standing rules.
 
-## Domain & decisions
+## Instructions
 
-- **Language:** [`CONTEXT.md`](CONTEXT.md) — web's inner domain; solution-wide terms in [`../CONTEXT.md`](../CONTEXT.md).
-- **Decisions:** [`docs/adr/`](docs/adr/) — web-scoped ADRs.
-
-## Verify after changes
+### Verify after changes
 
 Run from `web/`:
 
@@ -17,7 +14,13 @@ Run from `web/`:
 
 Use `pnpm format` to apply Prettier.
 
-## Conventions
+### Design system
 
-- **Design system** — all UI composes the `$lib/ui` primitive kit (typed variants, design tokens, scoped CSS); no raw interactive elements. Read [`docs/agents/design-system.md`](docs/agents/design-system.md) before building or changing UI.
-- **Prototyping** — throwaway, dev-only design experiments under `/prototype`. See [`docs/agents/prototyping.md`](docs/agents/prototyping.md).
+All UI composes the `$lib/ui` primitive kit (typed variants, design tokens, scoped CSS); no raw interactive elements. Read `docs/agents/design-system.md` before building or changing UI.
+
+## Routing — read only what the task needs, when it needs it
+
+- Vocabulary → `docs/agents/domain.md` (solution-wide terms → `../docs/agents/domain.md`)
+- Decisions → `docs/adr/`
+- Design system → `docs/agents/design-system.md`
+- Prototyping — throwaway, dev-only design experiments under `/prototype` → `docs/agents/prototyping.md`

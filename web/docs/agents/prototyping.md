@@ -1,13 +1,13 @@
 # Prototyping
 
-How to build a throwaway UI prototype in this repo. This is the project's routing convention that the global `prototype` skill defers to ("obey whatever routing convention the project already uses"). Rationale and rejected alternatives: [ADR-0010](../../../docs/adr/0010-prototypes-as-dev-only-sveltekit-routes.md).
+How to build a throwaway UI prototype in this repo. This is the project's routing convention that the global `prototype` skill defers to ("obey whatever routing convention the project already uses"). Rationale and rejected alternatives: [ADR-0002](../adr/0002-prototypes-as-dev-only-sveltekit-routes.md).
 
 ## Vocabulary
 
 - **Prototype** — throwaway, dev-only code that answers a design question. It lives inside the SvelteKit app but never ships to production.
 - **Graduate** — to fold a validated prototype into the real app by pointing a real route at the shared `$lib` building blocks the prototype used. No HTML-to-Svelte rewrite, because the prototype already _is_ Svelte.
 
-(These are build-workflow terms and deliberately stay out of `CONTEXT.md`, which is a pure domain glossary.)
+(These are build-workflow terms and deliberately stay out of `domain.md`, which is a pure domain glossary.)
 
 ## The convention
 

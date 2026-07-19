@@ -1,18 +1,37 @@
-# Instructions
+# LLM Retro — Agent Guide
 
-## Repository invariants
+## Instructions
 
-- TODO
+### Repository invariants
 
-## Agent skills
+- Work happens at the **solution level**: this root `AGENTS.md` is the only guidance guaranteed to be loaded. Reach everything else through the routing below — read a nested file only when the current task walks to it, never up front.
+- Every context (this root, or a working target like `web`/`db`/`jobs`) has the **same shape**: an `AGENTS.md`, a `docs/agents/` reference library (its `domain.md` glossary + conventions), and a `docs/adr/` decision log. The full convention is [`docs/agents/doc-architecture.md`](docs/agents/doc-architecture.md).
+- The two standing rules below apply **at every level** — root and every working target alike.
 
-Use progressive disclosure: read only the guidance relevant to the current task, immediately before it is needed.
+### Read before you name (every level)
 
-- **Working in an app?** Read that app's `AGENTS.md` first (e.g. `web/AGENTS.md`); it unpacks that app's domain (`CONTEXT.md`), decisions (`docs/adr/`), and conventions. Agent tools following the `AGENTS.md` convention load it automatically by directory.
-- **Domain & decisions:** The root `CONTEXT.md` defines solution-wide concepts; each app's own `CONTEXT.md` defines its inner domain. Repo-wide decisions live in `docs/adr/`. Use that vocabulary in your output (issue titles, tests, proposals), and flag anything that contradicts an ADR.
-- **Planning:** When creating or reviewing an implementation plan (not the actual implement phase), follow `docs/agents/planning.md`.
-- **Issue tracker:** Issues and PRDs are tracked in GitHub Issues for this repository. See `docs/agents/issue-tracker.md`.
-- **Triage labels:** Triage uses the canonical `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix` labels. See `docs/agents/triage-labels.md`.
+Before writing anything that names a domain concept — an issue title, a test name, a proposal, a hypothesis, a commit message, ADR wording — read the `domain.md` for the context you are working in, plus the root `domain.md` for solution-wide terms. Use its exact terms; avoid the synonyms it lists under _Avoid_. If a concept you need is not defined, that is a signal: either you are inventing language the project does not use (reconsider), or there is a real gap (note it for domain-modelling — do not silently coin a term). Skip only for tasks that produce no domain-named output (e.g. a dependency bump).
+
+### Read before you decide or diverge (every level)
+
+Before proposing an architectural change, or working in an area governed by a decision, scan the `docs/adr/` filenames for the context (they are titled) and read only the ones touching your area — the root `docs/adr/` for system-wide decisions, the target's for its internal ones. If your output would contradict an ADR, surface it explicitly ("Contradicts ADR-0004 (signals are deterministic-only) — but worth reopening because…") rather than silently overriding it.
+
+## Routing — read only what the task needs, when it needs it
+
+### Working targets
+
+- Working on the web app or any UI change → `web/AGENTS.md`
+- Working on the store of record — the schema, the Normalised Session Model, or a migration → `db/AGENTS.md`
+- Working on a job — extraction, analysis, or the insight layer → `jobs/AGENTS.md`
+
+### This (solution) context
+
+- Solution-wide vocabulary → `docs/agents/domain.md`
+- System-wide decisions → `docs/adr/`
+- Planning an implementation (not the implement phase) → `docs/agents/planning.md`
+- Issue tracker (issues & PRDs are GitHub Issues) → `docs/agents/issue-tracker.md`
+- Triage labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`) → `docs/agents/triage-labels.md`
+- How this documentation is organised → `docs/agents/doc-architecture.md`
 
 ## Final review loop
 

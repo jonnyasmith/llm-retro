@@ -2,12 +2,12 @@
 
 **Scope:** the first build-sequence item — a runnable stack with `db` (Postgres+pgvector) and `web` (SvelteKit shell), Compose profiles wired so `docker compose up` brings only `db`+`web`, and the migration runner wired with an empty/bootstrap migration. No Signals, Jobs, or Viewers yet.
 
-**Grounding:** PRD §2 (architecture), §8.1; ADR-0001 (Postgres single source of truth), ADR-0002 (self-describing Job containers), ADR-0003 (polyglot: Python Jobs / SvelteKit web, web holds the socket), ADR-0009 (schema as neutral SQL migrations run by web).
+**Grounding:** PRD §2 (architecture), §8.1; ADR-0001 (Postgres single source of truth), ADR-0002 (self-describing Job containers), ADR-0003 (polyglot: Python Jobs / SvelteKit web, web holds the socket), ADR-0005 (schema as neutral SQL migrations run by web).
 
 ## Decisions
 
 - **Repo layout** — bare top-level service dirs: `web/`, `jobs/{base,import}/`, `db/migrations/`, `compose.yaml` at root; no monorepo meta-tool (single-user local doesn't need one); not nested under `src/` (`src/` is a single-package idiom, misfits a polyglot multi-image repo).
-- **Schema ownership** — hand-written plain SQL in `db/migrations/`; `web` applies on startup via a small ordered runner + `schema_migrations` ledger; forward-only (store is re-derivable, ADR-0009).
+- **Schema ownership** — hand-written plain SQL in `db/migrations/`; `web` applies on startup via a small ordered runner + `schema_migrations` ledger; forward-only (store is re-derivable, ADR-0005).
 - **Postgres image** — `pgvector/pgvector:pg18-trixie` (Postgres 18 + pgvector 0.8.5), digest-pinned `@sha256:9d2e61c7352b9e9f4798df5fd9a498f043f4cda1cdacc707de3d198650f4321e`; `pgvector` extension present but unused in v1 (ADR-0001).
 - **Data persistence** — named Docker volume mounted at `/var/lib/postgresql`, the volume declared by the Postgres 18 image; its version-specific `PGDATA` lives beneath that path (Portainer-managed, host-path-independent).
 - **Web stack** — pnpm; `node:24-slim` base (Node 24 LTS; Debian slim avoids Alpine/musl native-module friction with `pg`/`dockerode`); `@sveltejs/adapter-node`; SvelteKit 2.70 / Svelte 5; TypeScript; scaffolded with `sv create`.
@@ -32,7 +32,7 @@
 
 - **What makes a good test here:** the skeleton's observable contracts are (a) migrations apply idempotently and are recorded, (b) the stack composes with only `db`+`web` by default. Test those behaviours, not framework internals.
 - **Modules to test:**
-  - **Migration runner** — the one piece of real logic. Unit-test against a throwaway Postgres (dockerised `db` or testcontainer): applying `0001` records a ledger row; re-running is a no-op (no duplicate application, no error); lexical ordering is respected. This directly exercises the ADR-0009 mechanism and prefigures §8.2/§8.7 re-run semantics.
+  - **Migration runner** — the one piece of real logic. Unit-test against a throwaway Postgres (dockerised `db` or testcontainer): applying `0001` records a ledger row; re-running is a no-op (no duplicate application, no error); lexical ordering is respected. This directly exercises the ADR-0005 mechanism and prefigures §8.2/§8.7 re-run semantics.
   - **Compose profile behaviour** — assert (script-level, not unit) that the default profile set resolves to exactly `db`+`web` (Job services excluded). Cheap guard on the ADR-0002 "off by default" invariant.
 - **Not worth testing yet:** the placeholder route beyond a manual smoke `SELECT 1`; SvelteKit scaffolding; Dockerfile build (covered by the smoke test running the stack).
 - **Prior art / tooling:** none in-repo yet — this step establishes it. Per PRD Testing Decisions: `pytest` for Python Jobs (later) and the SvelteKit default (`vitest`) for the web app. Introduce `vitest` here for the migration runner.
@@ -46,7 +46,7 @@
 - `CLAUDE_CODE_OAUTH_TOKEN` and Inference-CLI plumbing — §8.7.
 - Transcript source-directory mounting (read-only `~/.claude`, `~/.codex`, pi dirs) into Jobs — an import-Job concern (§8.3).
 - Socket-proxy / thin-dispatcher hardening — reserved seam (ADR-0003), not built.
-- Down-migrations — forward-only by decision (ADR-0009).
+- Down-migrations — forward-only by decision (ADR-0005).
 
 ## Unresolved Questions
 
