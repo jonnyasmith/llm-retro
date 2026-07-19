@@ -18,6 +18,10 @@
 	--good: #3fb950;
 	--warn: #d29922;
 	--bad: #f85149;
+	/* Inference identity */
+	--inference-course-correction: #e2b341;
+	--inference-input-noise: #c678dd;
+	--inference-dumb-zone: #e06c75;
 
 	/* ---- Tool identity ---- */
 	--claude: #d97757;
