@@ -21,7 +21,7 @@ export { default as Text } from './Text.svelte';
 export { default as Toggle } from './Toggle.svelte';
 export { default as Verdict } from './Verdict.svelte';
 
-export type { AccentToken } from './AccentPanel.svelte';
+export type { AccentPanelDensity, AccentPanelSurface, AccentToken } from './AccentPanel.svelte';
 export type { BadgeTone } from './Badge.svelte';
 export type { ButtonVariant, ButtonSize } from './Button.svelte';
 export type { CardTitleTransform } from './CardTitle.svelte';

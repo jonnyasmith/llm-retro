@@ -3,9 +3,9 @@
 
 import { NOW, THEMES } from './data';
 import type { InferenceType, ResolvedTheme, Session } from './types';
+import { formatCompact } from '$lib/format';
 
-export const fmtK = (n: number): string =>
-	n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(0) + 'k' : '' + n;
+export const fmtK = formatCompact;
 export const fmtMin = (m: number): string => (m >= 60 ? (m / 60).toFixed(1) + 'h' : m + 'm');
 
 export interface FilterState {

@@ -1,6 +1,14 @@
-// Domain shapes for the metrics-viewer prototype. Mirror the CONTEXT.md
+// Domain shapes for the metrics-viewer prototype. Mirror the domain vocabulary
 // vocabulary (Session, Signal, Inference) but hold only what the mock viewer
-// needs — this is throwaway data, not the real Normalised Session Model.
+// needs — this is provisional data, not the real Normalised Session Model.
+
+import type { Inference } from '$lib/components/prototypes/Inference.types';
+
+export type {
+	Inference,
+	InferenceType,
+	Provenance
+} from '$lib/components/prototypes/Inference.types';
 
 export type ToolName = 'claude' | 'codex' | 'pi';
 
@@ -32,32 +40,6 @@ export interface Session {
 	inferences: Inference[];
 	/** The per-session dumb-zone Inference, or null when it never degraded. */
 	dumbZone: Inference | null;
-}
-
-export type InferenceType = 'course-correction' | 'input-noise' | 'dumb-zone';
-
-export interface Provenance {
-	model: string;
-	promptVersion: string;
-	extractorVersion: string;
-	ranAt: Date;
-	rawResponseRef: string;
-}
-
-export interface Inference {
-	id: string;
-	type: InferenceType;
-	sessionId: string;
-	turnRef: number;
-	messageRef: string;
-	summary: string;
-	evidence: string;
-	correctedTo: string | null;
-	confidence: number;
-	authoritative: false;
-	provenance: Provenance;
-	/** Present only on dumb-zone Inferences: context tokens at degradation. */
-	degradedAtTokens?: number;
 }
 
 export interface Theme {

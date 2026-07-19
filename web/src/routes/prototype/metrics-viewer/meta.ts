@@ -1,19 +1,7 @@
-// Presentation metadata shared across viewer components.
-import type { InferenceType } from './types';
+import { INFERENCE_PRESENTATION } from '$lib/components/prototypes/Inference.presentation';
 
-export const INFMETA: Record<InferenceType, { icon: string; label: string; color: string }> = {
-	'course-correction': {
-		icon: '⤺',
-		label: 'Course-correction',
-		color: 'var(--inference-course-correction)'
-	},
-	'input-noise': {
-		icon: '⌇',
-		label: 'Input-noise waste',
-		color: 'var(--inference-input-noise)'
-	},
-	'dumb-zone': { icon: '▽', label: 'Dumb zone', color: 'var(--inference-dumb-zone)' }
-};
+// Presentation metadata shared across viewer containers.
+export const INFMETA = INFERENCE_PRESENTATION;
 
 // The three Insights layouts, offered through the shared prototype VariantBar.
 export const INSIGHT_VARIANTS: { id: string; label: string; description: string }[] = [

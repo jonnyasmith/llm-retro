@@ -5,7 +5,7 @@
 	import { INSIGHT_VARIANTS } from './meta';
 	import { useViewerState } from './viewerState.svelte';
 	import { useVariants } from '$lib/prototype/variants.svelte';
-	import { Banner, Text, Spacer } from '$lib/ui';
+	import InsightsBanner from '$lib/components/prototypes/InsightsBanner.svelte';
 	import InsightDigest from './InsightDigest.svelte';
 	import InsightWorkbench from './InsightWorkbench.svelte';
 	import InsightExplorer from './InsightExplorer.svelte';
@@ -37,18 +37,14 @@
 </script>
 
 <div class="insights">
-	<Banner tone="warn" class="insights-banner">
-		<Text tone="warn" class="lead">⚠ Model-derived · non-authoritative</Text>
-		<Text tone="dim">
-			The LLM pass over the same {f.length} filtered sessions — Signals remain the source of truth. Extractor
-			v{EXTRACTOR_V}.
-		</Text>
-		<Spacer />
-		<Text tone="dim" mono>
-			{sc.totalInf} inferences · ⤺{sc.byType['course-correction']} ⌇{sc.byType['input-noise']} ▽{sc
-				.byType['dumb-zone']}
-		</Text>
-	</Banner>
+	<div class="banner">
+		<InsightsBanner
+			sessionCount={f.length}
+			extractorVersion={EXTRACTOR_V}
+			total={sc.totalInf}
+			byType={sc.byType}
+		/>
+	</div>
 	{#if variant === 'B'}
 		<InsightWorkbench {f} />
 	{:else if variant === 'C'}
@@ -63,13 +59,7 @@
 		/* Full-bleed like the other views; the cards below flow to fill the width. */
 		max-width: none;
 	}
-	.insights :global(.insights-banner) {
+	.banner {
 		margin-bottom: 24px;
-	}
-	.insights :global(.lead) {
-		font-size: 11px;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.5px;
 	}
 </style>
