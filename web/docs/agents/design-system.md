@@ -1,16 +1,45 @@
 # Design system
 
-How to build and change web UI. All UI is **composition of `$lib/ui` primitives** styled by a
-**design-token** layer with **component-scoped CSS** — no Tailwind, no shared BEM stylesheet. The
-_why_ is [ADR-0001](../adr/0001-design-system-scoped-css-tokens-variants.md); this is the _how_.
+How to build and change web UI. UI is built in **three layers** with a strict split of _appearance_
+from _layout and data_ ([ADR-0003](../adr/0003-container-presentational-component-split.md)), all
+styled by a **design-token** layer with **component-scoped CSS** — no Tailwind, no shared BEM
+stylesheet ([ADR-0001](../adr/0001-design-system-scoped-css-tokens-variants.md)). This is the _how_.
+
+## The three layers
+
+| Layer                        | Lives in              | Knows the domain? | Owns                                                      |
+| ---------------------------- | --------------------- | ----------------- | --------------------------------------------------------- |
+| **Primitive**                | `src/lib/ui/`         | No                | Its own appearance + a11y; generic, reusable anywhere     |
+| **Presentational component** | `src/lib/components/` | Yes               | Its **entire appearance** (structure + styling)           |
+| **Container** (page/layout)  | `src/routes/**`       | Yes               | **Data + arrangement** only — never how a component looks |
+
+- **Primitive** — domain-agnostic; never imports a domain type. `Button`, `Card`, `Badge`, plus
+  generic compositions promoted here (`StatCard`, `ChartPanel`, `AccentPanel`).
+- **Presentational component** — a domain-_aware_ composition. **Props in, callbacks out**: no data
+  fetching, no store/state access, no side effects (no navigation, no DOM reaching). Trivially
+  testable by rendering with props. `JobCard`, `InferenceCard`, `SessionRow`.
+- **Container** — owns data and arrangement (grids, flex, gaps, wiring data down and callbacks up,
+  composing components together). Ignorant of appearance; its `<style>` is **layout-only** (`display`,
+  `grid-template`, `flex`, `gap`, `max-width`, alignment) — never `border`, `background`,
+  `border-radius`, decorative `padding`, colour, or type treatment.
+
+The primitive/presentational seam is one binary: **does this file import a domain type?**
+Domain-agnostic → `$lib/ui`; domain-aware → `$lib/components`.
+
+**Extraction is triggered, not upfront.** A container may compose primitives inline, but MUST extract
+a named presentational component the instant any one holds: it _repeats_, it _needs appearance CSS of
+its own_, or it _carries domain meaning worth testing_. Writing a `border`/`background` in a page's
+`<style>` is the signal the trigger has fired.
 
 ## Where things live
 
-| Path                        | Role                                                                                                                                                  |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/lib/styles/tokens.css` | Design tokens on `:root` (colour, spacing, radii, type, focus). Imported once in the root `+layout.svelte`. Plus the one global reset (`box-sizing`). |
-| `src/lib/ui/`               | The primitive components + `index.ts` barrel and `utils.ts` (`cn`).                                                                                   |
-| `src/lib/actions/`          | Behavioural actions, e.g. `clickable` (keyboard/ARIA for non-button rows).                                                                            |
+| Path                             | Role                                                                                                                                                                 |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/lib/styles/tokens.css`      | Design tokens on `:root` (colour, spacing, radii, type, focus). Imported once in the root `+layout.svelte`. Plus the one global reset (`box-sizing`).                |
+| `src/lib/ui/`                    | Domain-agnostic primitives + `index.ts` barrel and `utils.ts` (`cn`).                                                                                                |
+| `src/lib/components/`            | Domain-aware presentational components.                                                                                                                              |
+| `src/lib/components/prototypes/` | Provisional presentational components under design; promote to `src/lib/components/` or delete ([ADR-0002](../adr/0002-prototypes-as-dev-only-sveltekit-routes.md)). |
+| `src/lib/actions/`               | Behavioural actions, e.g. `clickable` (keyboard/ARIA for non-button rows).                                                                                           |
 
 Import primitives from the barrel: `import { Button, Card, Row } from '$lib/ui';`
 
@@ -62,13 +91,25 @@ identity are tokens too (`--claude-tint`, etc.).
 - **Compose, don't restyle.** Reach for a primitive/variant first. Genuinely one-off layout goes in
   that component's own scoped `<style>`, tokens only — never a new shared stylesheet.
 - **Tokens only.** Don't hardcode a hex/spacing value that a token already names.
+- **Containers own layout, not looks.** A page/layout `<style>` holds layout properties only
+  (`display`, `grid-template`, `flex`, `gap`, `max-width`, alignment). A `border`, `background`,
+  `border-radius`, decorative `padding`, colour, or type treatment in a route means you should be
+  extracting a presentational component instead.
+- **Presentational components are pure.** Props in, callbacks out. No `load`/`fetch`, no store or
+  viewer-state access, no navigation or DOM reaching — the container passes those in as callbacks.
+- **Extract on the trigger.** Pull an inline composition into a named component the instant it
+  repeats, needs its own appearance CSS, or carries domain meaning worth testing.
 
 ## Extending
 
 - **New variant** — add a `data-*` branch in the primitive's scoped `<style>` and widen the prop's
   union type. Keep the base class untouched.
-- **New primitive** — one file in `src/lib/ui/`, follow the contract (variant `data-*` + `cn(class)` +
-  `...rest`), export it from `index.ts`. Own its DOM and a11y.
+- **New primitive** (domain-agnostic) — one file in `src/lib/ui/`, follow the contract (variant
+  `data-*` + `cn(class)` + `...rest`), export it from `index.ts`. Own its DOM and a11y. Never import a
+  domain type here.
+- **New presentational component** (domain-aware) — one file in `src/lib/components/` (or
+  `src/lib/components/prototypes/` while still under design). Compose primitives; own the whole look;
+  props in, callbacks out.
 - **New token** — add it to `tokens.css` under the right group; reference via `var(--…)`.
 
 Primitive prop types are the source of truth for each component's API — read the `.svelte` file when
