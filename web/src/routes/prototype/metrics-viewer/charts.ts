@@ -1,5 +1,5 @@
-// Pure ECharts option builders. No echarts runtime import here (type-only), so
-// these stay cheap and SSR-safe; Chart.svelte owns the actual init/dispose.
+// ECharts option builders. No echarts runtime import here (type-only), so these
+// stay cheap; Chart.svelte owns the actual init/dispose.
 
 import type { EChartsOption } from 'echarts';
 import type { CallbackDataParams } from 'echarts/types/dist/shared';
@@ -11,18 +11,22 @@ import {
 	type DumbZoneAggregate,
 	type LatencyMode
 } from './aggregate';
-import type { Session } from './types';
+import type { Session, ToolName } from './types';
+import { chartColours } from './chartColours';
 
-const AX = { text: '#8b98a5', line: '#2a323d', split: '#1c232d' };
 const baseGrid = { left: 44, right: 16, top: 24, bottom: 28 };
-const axStyle = {
-	axisLine: { lineStyle: { color: AX.line } },
-	axisLabel: { color: AX.text, fontSize: 11 },
-	splitLine: { lineStyle: { color: AX.split } }
-};
-const TOOL_COLOR: Record<string, string> = { claude: '#d97757', codex: '#10a37f', pi: '#a371f7' };
+
+function axes(colours: ReturnType<typeof chartColours>) {
+	return {
+		axisLine: { lineStyle: { color: colours.line } },
+		axisLabel: { color: colours.text, fontSize: 11 },
+		splitLine: { lineStyle: { color: colours.backgroundSecondary } }
+	};
+}
 
 export function latencyHourOption(a: Aggregate, mode: LatencyMode): EChartsOption {
+	const colours = chartColours();
+	const axStyle = axes(colours);
 	const data = hourSeries(a, mode);
 	return {
 		grid: baseGrid,
@@ -34,20 +38,20 @@ export function latencyHourOption(a: Aggregate, mode: LatencyMode): EChartsOptio
 			name: 'hour (Europe/London)',
 			nameLocation: 'middle',
 			nameGap: 32,
-			nameTextStyle: { color: AX.text, fontSize: 10 }
+			nameTextStyle: { color: colours.text, fontSize: 10 }
 		},
 		yAxis: {
 			type: 'value',
 			...axStyle,
 			name: mode === 'perToken' ? 'ms / output-token' : 'avg latency (s)',
-			nameTextStyle: { color: AX.text, fontSize: 10 }
+			nameTextStyle: { color: colours.text, fontSize: 10 }
 		},
 		series: [
 			{
 				type: 'bar',
 				data,
 				itemStyle: {
-					color: (p) => (p.dataIndex >= 13 && p.dataIndex <= 17 ? '#d29922' : '#4c8dff'),
+					color: (p) => (p.dataIndex >= 13 && p.dataIndex <= 17 ? colours.warn : colours.accent),
 					borderRadius: [3, 3, 0, 0]
 				}
 			}
@@ -56,6 +60,7 @@ export function latencyHourOption(a: Aggregate, mode: LatencyMode): EChartsOptio
 }
 
 export function modelMixOption(a: Aggregate): EChartsOption {
+	const colours = chartColours();
 	const data = Object.entries(a.modelTokens).map(([m, v]) => ({ name: m, value: Math.round(v) }));
 	return {
 		tooltip: {
@@ -65,7 +70,7 @@ export function modelMixOption(a: Aggregate): EChartsOption {
 				return `${d.name}<br>${fmtK(d.value as number)} tok · ${d.percent}%`;
 			}
 		},
-		legend: { bottom: 0, textStyle: { color: AX.text, fontSize: 11 } },
+		legend: { bottom: 0, textStyle: { color: colours.text, fontSize: 11 } },
 		series: [
 			{
 				type: 'pie',
@@ -74,13 +79,22 @@ export function modelMixOption(a: Aggregate): EChartsOption {
 				avoidLabelOverlap: true,
 				label: { show: false },
 				data,
-				color: ['#4c8dff', '#7c5cff', '#3fb950', '#d29922', '#f85149', '#10a37f']
+				color: [
+					colours.accent,
+					colours.accentSecondary,
+					colours.good,
+					colours.warn,
+					colours.bad,
+					colours.codex
+				]
 			}
 		]
 	};
 }
 
 export function toolsOption(a: Aggregate): EChartsOption {
+	const colours = chartColours();
+	const axStyle = axes(colours);
 	const ent = Object.entries(a.toolCounts).sort((x, y) => x[1] - y[1]);
 	return {
 		grid: { left: 60, right: 24, top: 10, bottom: 20 },
@@ -91,7 +105,7 @@ export function toolsOption(a: Aggregate): EChartsOption {
 			{
 				type: 'bar',
 				data: ent.map((e) => e[1]),
-				itemStyle: { color: '#10a37f', borderRadius: [0, 4, 4, 0] },
+				itemStyle: { color: colours.codex, borderRadius: [0, 4, 4, 0] },
 				barWidth: '60%'
 			}
 		]
@@ -99,8 +113,19 @@ export function toolsOption(a: Aggregate): EChartsOption {
 }
 
 export function durationVsTurnsOption(sessions: readonly Session[]): EChartsOption {
-	const byTool: Record<string, [number, number, string][]> = {};
-	for (const s of sessions) (byTool[s.tool] ||= []).push([s.turns, s.durationMin, s.id]);
+	const colours = chartColours();
+	const axStyle = axes(colours);
+	const toolColour: Record<ToolName, string> = {
+		claude: colours.claude,
+		codex: colours.codex,
+		pi: colours.pi
+	};
+	const byTool = new Map<ToolName, [number, number, string][]>();
+	for (const session of sessions) {
+		const values = byTool.get(session.tool) ?? [];
+		values.push([session.turns, session.durationMin, session.id]);
+		byTool.set(session.tool, values);
+	}
 	return {
 		grid: baseGrid,
 		tooltip: {
@@ -109,20 +134,26 @@ export function durationVsTurnsOption(sessions: readonly Session[]): EChartsOpti
 				return `${d[2]} · ${d[0]} turns · ${fmtMin(d[1])}`;
 			}
 		},
-		legend: { top: 0, textStyle: { color: AX.text, fontSize: 11 } },
-		xAxis: { type: 'value', name: 'turns', ...axStyle, nameTextStyle: { color: AX.text } },
-		yAxis: { type: 'value', name: 'duration (min)', ...axStyle, nameTextStyle: { color: AX.text } },
-		series: Object.entries(byTool).map(([t, d]) => ({
-			name: t,
+		legend: { top: 0, textStyle: { color: colours.text, fontSize: 11 } },
+		xAxis: { type: 'value', name: 'turns', ...axStyle, nameTextStyle: { color: colours.text } },
+		yAxis: {
+			type: 'value',
+			name: 'duration (min)',
+			...axStyle,
+			nameTextStyle: { color: colours.text }
+		},
+		series: [...byTool].map(([tool, data]) => ({
+			name: tool,
 			type: 'scatter',
-			data: d,
+			data,
 			symbolSize: 9,
-			itemStyle: { color: TOOL_COLOR[t], opacity: 0.8 }
+			itemStyle: { color: toolColour[tool], opacity: 0.8 }
 		}))
 	};
 }
 
 export function subagentShareOption(a: Aggregate): EChartsOption {
+	const colours = chartColours();
 	const rootTok = a.totalTokens - a.subTokens;
 	return {
 		tooltip: {
@@ -139,8 +170,12 @@ export function subagentShareOption(a: Aggregate): EChartsOption {
 				center: ['50%', '50%'],
 				label: { show: false },
 				data: [
-					{ name: 'root sessions', value: Math.round(rootTok), itemStyle: { color: '#2a323d' } },
-					{ name: 'subagents', value: Math.round(a.subTokens), itemStyle: { color: '#7c5cff' } }
+					{ name: 'root sessions', value: Math.round(rootTok), itemStyle: { color: colours.line } },
+					{
+						name: 'subagents',
+						value: Math.round(a.subTokens),
+						itemStyle: { color: colours.accentSecondary }
+					}
 				]
 			}
 		]
@@ -148,6 +183,7 @@ export function subagentShareOption(a: Aggregate): EChartsOption {
 }
 
 export function sparkOption(s: Session): EChartsOption {
+	const colours = chartColours();
 	return {
 		grid: { left: 0, right: 0, top: 2, bottom: 2 },
 		xAxis: { type: 'category', show: false, data: s.latency.map((_, i) => i) },
@@ -157,14 +193,15 @@ export function sparkOption(s: Session): EChartsOption {
 				type: 'line',
 				data: s.latency.map((l) => l.ms),
 				showSymbol: false,
-				lineStyle: { width: 1.5, color: '#4c8dff' },
-				areaStyle: { color: 'rgba(76,141,255,.15)' }
+				lineStyle: { width: 1.5, color: colours.accent },
+				areaStyle: { color: colours.accentArea }
 			}
 		]
 	};
 }
 
 export function dumbZoneOption(dza: DumbZoneAggregate): EChartsOption {
+	const colours = chartColours();
 	const W = 20000;
 	const MAX = 160000;
 	const nb = MAX / W;
@@ -180,35 +217,35 @@ export function dumbZoneOption(dza: DumbZoneAggregate): EChartsOption {
 		xAxis: {
 			type: 'category',
 			data: labels,
-			axisLine: { lineStyle: { color: AX.line } },
-			axisLabel: { color: AX.text, fontSize: 10, rotate: 30 },
+			axisLine: { lineStyle: { color: colours.line } },
+			axisLabel: { color: colours.text, fontSize: 10, rotate: 30 },
 			name: 'context tokens at degradation',
 			nameLocation: 'middle',
 			nameGap: 34,
-			nameTextStyle: { color: AX.text, fontSize: 10 }
+			nameTextStyle: { color: colours.text, fontSize: 10 }
 		},
 		yAxis: {
 			type: 'value',
-			axisLabel: { color: AX.text },
-			splitLine: { lineStyle: { color: AX.split } },
+			axisLabel: { color: colours.text },
+			splitLine: { lineStyle: { color: colours.backgroundSecondary } },
 			name: 'sessions',
-			nameTextStyle: { color: AX.text, fontSize: 10 }
+			nameTextStyle: { color: colours.text, fontSize: 10 }
 		},
 		series: [
 			{
 				type: 'bar',
 				data: buckets,
-				itemStyle: { color: '#e06c75', borderRadius: [3, 3, 0, 0] },
+				itemStyle: { color: colours.dumbZone, borderRadius: [3, 3, 0, 0] },
 				markLine: dza.threshold
 					? {
 							symbol: 'none',
 							label: {
 								formatter: `threshold ~${fmtK(dza.threshold)}`,
-								color: '#e2b341',
+								color: colours.courseCorrection,
 								position: 'insideEndTop',
 								fontSize: 10
 							},
-							lineStyle: { color: '#e2b341', type: 'dashed' },
+							lineStyle: { color: colours.courseCorrection, type: 'dashed' },
 							data: [{ xAxis: Math.floor(dza.threshold / W) }]
 						}
 					: undefined
@@ -218,6 +255,7 @@ export function dumbZoneOption(dza: DumbZoneAggregate): EChartsOption {
 }
 
 export function gaugeOption(pct: number): EChartsOption {
+	const colours = chartColours();
 	return {
 		series: [
 			{
@@ -233,9 +271,9 @@ export function gaugeOption(pct: number): EChartsOption {
 					lineStyle: {
 						width: 12,
 						color: [
-							[0.5, '#3fb950'],
-							[0.75, '#d29922'],
-							[1, '#f85149']
+							[0.5, colours.good],
+							[0.75, colours.warn],
+							[1, colours.bad]
 						]
 					}
 				},
@@ -246,7 +284,7 @@ export function gaugeOption(pct: number): EChartsOption {
 				detail: {
 					formatter: (v: number) => (v > 0 ? '+' : '') + v.toFixed(0) + '%',
 					fontSize: 18,
-					color: '#e6edf3',
+					color: colours.ink,
 					offsetCenter: [0, '18%']
 				},
 				data: [{ value: pct }]

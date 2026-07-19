@@ -1,14 +1,13 @@
 import { getContext, setContext } from 'svelte';
 import { SvelteSet } from 'svelte/reactivity';
+import type { MetricsView } from '$lib/components/prototypes/MetricsViewer.types';
 import { TOOLS } from './data';
 import type { LatencyMode } from './aggregate';
 import type { ToolName } from './types';
 
-export type View = 'overview' | 'sessions' | 'insights' | 'jobs';
-
 /** Shared, reactive viewer state: header nav + filter bar + cross-view selection. */
 export class ViewerState {
-	view = $state<View>('overview');
+	view = $state<MetricsView>('overview');
 	tools = new SvelteSet<ToolName>(TOOLS);
 	models = new SvelteSet<string>();
 	days = $state(21);

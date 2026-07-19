@@ -8,6 +8,7 @@
 	import SessionsView from './SessionsView.svelte';
 	import InsightsView from './InsightsView.svelte';
 	import JobsView from './JobsView.svelte';
+	import { AppSurface } from '$lib/ui';
 
 	const st = provideViewerState();
 	const f = $derived(filtered(ALL, st));
@@ -18,7 +19,7 @@
 	<title>PROTOTYPE — Metrics + Insights Viewer</title>
 </svelte:head>
 
-<div class="mv">
+<AppSurface>
 	<div class="app">
 		<TopBar {a} />
 		<FilterBar {a} />
@@ -34,14 +35,9 @@
 			{/if}
 		</div>
 	</div>
-</div>
+</AppSurface>
 
 <style>
-	.mv {
-		color: var(--ink);
-		font-family: var(--sans);
-		background: var(--bg);
-	}
 	.app {
 		display: flex;
 		flex-direction: column;
