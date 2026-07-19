@@ -8,12 +8,22 @@ describe('ChartPanel', () => {
 	it('renders its title, chart, and optional header controls', () => {
 		render(ChartPanel, {
 			title: 'Latency by hour',
+			titleTransform: 'none',
 			headerControls: createRawSnippet(() => ({ render: () => 'Per output-token' })),
 			children: createRawSnippet(() => ({ render: () => 'Chart slot' }))
 		});
 
-		expect(screen.getByRole('heading', { name: 'Latency by hour' })).toBeDefined();
+		expect(screen.getByRole('heading', { name: 'Latency by hour' }).dataset.transform).toBe('none');
 		expect(screen.getByText('Per output-token')).toBeDefined();
 		expect(screen.getByText('Chart slot')).toBeDefined();
+	});
+
+	it('renders an untitled chart without adding a heading', () => {
+		render(ChartPanel, {
+			children: createRawSnippet(() => ({ render: () => '<span>Tool usage chart</span>' }))
+		});
+
+		expect(screen.queryByRole('heading')).toBeNull();
+		expect(screen.getByText('Tool usage chart')).toBeDefined();
 	});
 });
