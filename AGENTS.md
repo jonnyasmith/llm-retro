@@ -1,20 +1,4 @@
-# LLM Retro — Agent Guide
-
-## Instructions
-
-### Repository invariants
-
-- Work happens at the **solution level**: this root `AGENTS.md` is the only guidance guaranteed to be loaded. Reach everything else through the routing below — read a nested file only when the current task walks to it, never up front.
-- Every context (this root, or a working target like `web`/`db`/`jobs`) has the **same shape**: an `AGENTS.md`, a `docs/agents/` reference library (its `domain.md` glossary + conventions), and a `docs/adr/` decision log. The full convention is [`docs/agents/doc-architecture.md`](docs/agents/doc-architecture.md).
-- The two standing rules below apply **at every level** — root and every working target alike.
-
-### Read before you name (every level)
-
-Before writing anything that names a domain concept — an issue title, a test name, a proposal, a hypothesis, a commit message, ADR wording — read the `domain.md` for the context you are working in, plus the root `domain.md` for solution-wide terms. Use its exact terms; avoid the synonyms it lists under _Avoid_. If a concept you need is not defined, that is a signal: either you are inventing language the project does not use (reconsider), or there is a real gap (note it for domain-modelling — do not silently coin a term). Skip only for tasks that produce no domain-named output (e.g. a dependency bump).
-
-### Read before you decide or diverge (every level)
-
-Before proposing an architectural change, or working in an area governed by a decision, scan the `docs/adr/` filenames for the context (they are titled) and read only the ones touching your area — the root `docs/adr/` for system-wide decisions, the target's for its internal ones. If your output would contradict an ADR, surface it explicitly ("Contradicts ADR-0004 (signals are deterministic-only) — but worth reopening because…") rather than silently overriding it.
+# Solution Wide Instructions
 
 ## Routing — read only what the task needs, when it needs it
 
@@ -31,7 +15,18 @@ Before proposing an architectural change, or working in an area governed by a de
 - Planning an implementation (not the implement phase) → `docs/agents/planning.md`
 - Issue tracker (issues & PRDs are GitHub Issues) → `docs/agents/issue-tracker.md`
 - Triage labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`) → `docs/agents/triage-labels.md`
-- How this documentation is organised → `docs/agents/doc-architecture.md`
+
+## Standing rules — apply at every level
+
+These two rules hold in every context — this root and every working target. Each target's `AGENTS.md` points back here for them.
+
+### Read before you name
+
+Before writing anything that names a domain concept — an issue title, a test name, a proposal, a hypothesis, a commit message, ADR wording — read the `domain.md` for the context you are working in, plus the root `domain.md` for solution-wide terms. Use its exact terms; avoid the synonyms it lists under _Avoid_. If a concept you need is not defined, that is a signal: either you are inventing language the project does not use (reconsider), or there is a real gap (note it for domain-modelling — do not silently coin a term). Skip only for tasks that produce no domain-named output (e.g. a dependency bump).
+
+### Read before you decide or diverge
+
+Before proposing an architectural change, or working in an area governed by a decision, scan the `docs/adr/` filenames for the context (they are titled) and read only the ones touching your area — the root `docs/adr/` for system-wide decisions, the target's for its internal ones. If your output would contradict an ADR, surface it explicitly ("Contradicts ADR-0004 (signals are deterministic, inferences interpretive) — but worth reopening because…") rather than silently overriding it.
 
 ## Final review loop
 

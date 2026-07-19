@@ -20,7 +20,7 @@ All UI composes the `$lib/ui` primitive kit (typed variants, design tokens, scop
 
 ## Routing — read only what the task needs, when it needs it
 
-- Vocabulary → `docs/agents/domain.md` (solution-wide terms → `../docs/agents/domain.md`)
-- Decisions → `docs/adr/`
+- Web-scoped vocabulary → `docs/agents/domain.md` (solution-wide terms → `../docs/agents/domain.md`)
+- Web-scoped decisions → `docs/adr/`
 - Design system → `docs/agents/design-system.md`
 - Prototyping — throwaway, dev-only design experiments under `/prototype` → `docs/agents/prototyping.md`
