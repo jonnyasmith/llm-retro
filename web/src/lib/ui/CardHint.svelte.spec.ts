@@ -8,9 +8,11 @@ describe('CardHint', () => {
 	it('renders an italic hint when requested', () => {
 		render(CardHint, {
 			italic: true,
-			children: createRawSnippet(() => ({ render: () => 'Click a point' }))
+			children: createRawSnippet(() => ({ render: () => '<span>Click a point</span>' }))
 		});
 
-		expect(screen.getByText('Click a point').dataset.italic).toBe('true');
+		expect(
+			screen.getByText('Click a point').closest('[data-italic]')?.getAttribute('data-italic')
+		).toBe('true');
 	});
 });

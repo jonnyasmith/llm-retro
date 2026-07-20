@@ -7,7 +7,7 @@ import Badge from './Badge.svelte';
 describe('Badge', () => {
 	it('renders its label', () => {
 		render(Badge, {
-			children: createRawSnippet(() => ({ render: () => 'Codex' }))
+			children: createRawSnippet(() => ({ render: () => '<span>Codex</span>' }))
 		});
 
 		expect(screen.getByText('Codex')).toBeDefined();

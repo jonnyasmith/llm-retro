@@ -9,8 +9,8 @@ describe('ChartPanel', () => {
 		render(ChartPanel, {
 			title: 'Latency by hour',
 			titleTransform: 'none',
-			headerControls: createRawSnippet(() => ({ render: () => 'Per output-token' })),
-			children: createRawSnippet(() => ({ render: () => 'Chart slot' }))
+			headerControls: createRawSnippet(() => ({ render: () => '<span>Per output-token</span>' })),
+			children: createRawSnippet(() => ({ render: () => '<span>Chart slot</span>' }))
 		});
 
 		expect(screen.getByRole('heading', { name: 'Latency by hour' }).dataset.transform).toBe('none');
