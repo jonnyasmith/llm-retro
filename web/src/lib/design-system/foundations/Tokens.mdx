@@ -1,0 +1,104 @@
+import { Meta } from '@storybook/addon-docs/blocks';
+
+<Meta title="Foundations/Tokens" />
+
+# Foundations
+
+The application and Storybook consume the same semantic colour, spacing, radius, and typography tokens.
+
+<div
+	style={{
+		display: 'grid',
+		gridTemplateColumns: 'repeat(3, minmax(8rem, 1fr))',
+		gap: 'var(--space-5)'
+	}}
+>
+	{['bg', 'panel', 'panel2', 'accent', 'good', 'warn', 'bad', 'ink', 'muted'].map((token) => (
+		<div
+			style={{
+				background: `var(--${token})`,
+				color: token === 'ink' ? 'var(--bg)' : 'var(--ink)',
+				border: '1px solid var(--line)',
+				borderRadius: 'var(--radius-sm)',
+				padding: 'var(--space-6)'
+			}}
+		>
+			<code>--{token}</code>
+		</div>
+	))}
+</div>
+
+## Spacing
+
+<div
+	style={{
+		display: 'flex',
+		alignItems: 'end',
+		gap: 'var(--space-4)',
+		marginBlock: 'var(--space-5)'
+	}}
+>
+	{[1, 2, 3, 4, 5, 6, 7].map((step) => (
+		<div style={{ textAlign: 'center' }}>
+			<div
+				style={{
+					width: `var(--space-${step})`,
+					height: `var(--space-${step})`,
+					background: 'var(--accent)'
+				}}
+			/>
+			<code>{step}</code>
+		</div>
+	))}
+</div>
+
+## Radius and focus
+
+<div style={{ display: 'flex', gap: 'var(--space-5)', flexWrap: 'wrap' }}>
+	{['radius-sm', 'radius'].map((token) => (
+		<div
+			style={{
+				padding: 'var(--space-6)',
+				border: '1px solid var(--line)',
+				borderRadius: `var(--${token})`
+			}}
+		>
+			<code>--{token}</code>
+		</div>
+	))}
+	<button
+		style={{
+			padding: 'var(--space-4)',
+			borderRadius: 'var(--radius-sm)',
+			outline: 'var(--focus-ring)'
+		}}
+	>
+		<code>--focus-ring</code>
+	</button>
+</div>
+
+## Typography
+
+<p style={{ fontFamily: 'var(--sans)', fontSize: '18px' }}>
+	Interface text · <code>--sans</code>
+</p>
+<p style={{ fontFamily: 'var(--mono)', fontSize: '12px' }}>
+	Structured evidence · <code>--mono</code>
+</p>
+
+## Tool identity
+
+<div style={{ display: 'flex', gap: 'var(--space-4)', flexWrap: 'wrap' }}>
+	{['claude', 'codex', 'pi'].map((tool) => (
+		<span
+			style={{
+				color: `var(--${tool}-text)`,
+				border: `1px solid var(--${tool})`,
+				padding: 'var(--space-3)',
+				borderRadius: 'var(--radius-sm)'
+			}}
+		>
+			{tool}
+		</span>
+	))}
+</div>

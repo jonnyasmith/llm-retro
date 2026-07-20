@@ -1,6 +1,6 @@
 # Prototypes are full-fidelity, dev-only planning mockups under `/prototype`
 
-**Status:** accepted (revised — supersedes the original "throwaway" framing of this ADR)
+**Status:** superseded by [ADR-0005](0005-storybook-canonical-workbench.md) (historical decision retained below)
 
 A prototype is a **full working version of the real app driven by mock data** — real Svelte components, real routes, real tokens and primitives, but no database, jobs, or loaders wired up. It is a **planning-phase** artefact: the place we tweak components and pages to reach consensus on how the UI/UX should work, fast, before committing to implementation. Prototypes are built as real SvelteKit routes under `src/routes/prototype/<name>/`, served at `/prototype/<name>`. The whole `/prototype` subtree is **dev-only** (a `hooks.server.ts` handle hard-404s it unless `dev`) and **client-only** (`ssr = false` in `prototype/+layout.ts`), unlinked from the real app.
 

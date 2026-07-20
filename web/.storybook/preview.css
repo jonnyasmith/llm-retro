@@ -1,0 +1,12 @@
+html,
+body,
+#storybook-root {
+	min-height: 100%;
+}
+
+body {
+	margin: 0;
+	background: var(--bg);
+	color: var(--ink);
+	font-family: var(--sans);
+}

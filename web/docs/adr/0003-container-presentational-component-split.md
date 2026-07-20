@@ -1,6 +1,6 @@
 # UI is a container/presentational split; presentational components own their appearance
 
-**Status:** accepted
+**Status:** superseded by [ADR-0004](0004-ui-architecture-independent-axes.md) (historical decision retained below)
 
 Web UI is built in three layers with a strict separation of _appearance_ from _layout and data_:
 

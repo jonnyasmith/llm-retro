@@ -8,19 +8,26 @@ The SvelteKit application: the control plane and the Viewers. The root [`../AGEN
 
 Run from `web/`:
 
-- **`pnpm verify`** — the gate: `prettier --check` + `eslint`, then `svelte-check --fail-on-warnings` (a11y/type warnings fail), then unit tests. Must pass before yielding web work.
+- **`pnpm verify`** — the gate: formatting and ESLint, UI architecture checks, Svelte type/accessibility checks, unit and Storybook tests, and the static Storybook build. Must pass before yielding web work.
+- **`pnpm architecture:check`** — focused import, ownership, story metadata, route, and obsolete-path rules.
 - **`pnpm build`** — production build; run when a change could affect the bundle or SSR/adapter output.
-- **`pnpm dev`** — dev server. Prototypes are dev-only, client-only under `/prototype`; smoke-test UI changes there or in the real routes.
+- **`pnpm storybook`** — canonical UI workbench for components, templates, and mocked page states.
+- **`pnpm storybook:test`** — Storybook interaction and accessibility tests.
+- **`pnpm storybook:build`** — static Storybook build; run for changes to UI, stories, or Storybook configuration.
+- **`pnpm dev`** — production-application development server; use it to smoke-test real route integration.
 
 Use `pnpm format` to apply Prettier.
 
 ### Design system
 
-All UI composes the `$lib/ui` primitive kit (typed variants, design tokens, scoped CSS); no raw interactive elements. Read `docs/agents/design-system.md` before building or changing UI.
+UI follows three independent axes: composition, ownership, and lifecycle. Shared UI lives behind the
+`$lib/design-system` public API, feature UI under `$lib/features/<feature>/ui`, and route files orchestrate
+runtime behaviour. Prefer semantic HTML; use a neutral `<div>` when it is genuinely semantics-neutral.
+Read `docs/agents/design-system.md` before building or changing UI.
 
 ## Routing — read only what the task needs, when it needs it
 
 - Web-scoped vocabulary → `docs/agents/domain.md` (solution-wide terms → `../docs/agents/domain.md`)
 - Web-scoped decisions → `docs/adr/`
 - Design system → `docs/agents/design-system.md`
-- Prototyping — throwaway, dev-only design experiments under `/prototype` → `docs/agents/prototyping.md`
+- UI experiments — Storybook first; SvelteKit scenarios only for genuine runtime behaviour → `docs/agents/prototyping.md`

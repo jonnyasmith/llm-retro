@@ -1,8 +1,8 @@
-# Web UI is a scoped-CSS design system: tokens + shadcn-style variant primitives
+# Web UI uses scoped CSS, semantic tokens, and variants
 
 **Status:** accepted
 
-All web UI is composed from a primitive kit in `src/lib/ui/`, styled with Svelte **component-scoped CSS** driven by a global **design-token** layer (`src/lib/styles/tokens.css`). Each primitive exposes a typed **variant/size** surface resolved through `data-*` attributes and scoped attribute selectors (a `cva` analogue for scoped CSS), plus a `class` merge hook (`cn`) and `...rest` spread. Accessibility is owned by the primitives (native `<button>`, `aria-pressed`, the `clickable` action for non-button rows), and `svelte-check` runs with `--fail-on-warnings` so a11y regressions fail the build. The consumer guide is [`docs/agents/design-system.md`](../agents/design-system.md).
+All web UI is composed from the shared design system under `src/lib/design-system/`, styled with Svelte **component-scoped CSS** driven by a global **design-token** foundation. Components expose typed **variant/size** surfaces resolved through `data-*` attributes and scoped attribute selectors (a `cva` analogue for scoped CSS), plus a `class` merge hook (`cn`) and safe `...rest` forwarding. Accessibility is owned by the layer that implements the interaction (native `<button>`, `aria-pressed`, and equivalent accessible behaviour), and `svelte-check` runs with `--fail-on-warnings` so a11y regressions fail the build. The consumer guide is [`docs/agents/design-system.md`](../agents/design-system.md).
 
 ## Considered Options
 
@@ -13,7 +13,7 @@ All web UI is composed from a primitive kit in `src/lib/ui/`, styled with Svelte
 ## Consequences
 
 - Cross-component styling flows through **tokens**, not shared classes; one-off layout lives in the owning component's scoped `<style>`. There is no shared UI stylesheet to drift.
-- New visual patterns are added as a **variant** (`data-*` branch + widened union) or a new primitive — never by reintroducing global classes.
-- Interactive elements must be primitives (or use the `clickable` action); raw `<a href="#">` / `<div onclick>` controls are disallowed and caught by the warnings-as-errors check.
-- Primitive prop types are the component API; the guide's inventory table is a map, the `.svelte` files are the reference.
-- This is web-context-specific: it lives under `web/docs/adr/` (context-scoped decisions), not the repo-wide `docs/adr/`. Design-system vocabulary (primitive, variant, token) stays in the guide, not the domain glossary — consistent with [ADR-0002](0002-prototypes-as-dev-only-sveltekit-routes.md) keeping build-workflow terms out of `domain.md`.
+- New visual patterns are added as a **variant** (`data-*` branch + widened union) or a new shared component — never by reintroducing global classes.
+- Interactive behaviour must be implemented by the layer that owns its semantics and accessibility; raw `<a href="#">` / `<div onclick>` controls are disallowed and caught by the warnings-as-errors check.
+- Component prop types are the component API; the guide and stories explain intended use, while the `.svelte` files remain the reference.
+- This is web-context-specific: it lives under `web/docs/adr/` (context-scoped decisions), not the repo-wide `docs/adr/`. Design-system vocabulary stays in the guide, not the domain glossary. Composition, ownership, and lifecycle are decided separately by [ADR-0004](0004-ui-architecture-independent-axes.md).

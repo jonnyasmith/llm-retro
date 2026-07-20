@@ -1,116 +1,152 @@
 # Design system
 
-How to build and change web UI. UI is built in **three layers** with a strict split of _appearance_
-from _layout and data_ ([ADR-0003](../adr/0003-container-presentational-component-split.md)), all
-styled by a **design-token** layer with **component-scoped CSS** — no Tailwind, no shared BEM
-stylesheet ([ADR-0001](../adr/0001-design-system-scoped-css-tokens-variants.md)). This is the _how_.
+How to build and change web UI. The architecture has three independent axes: **composition**,
+**ownership**, and **lifecycle** ([ADR-0004](../adr/0004-ui-architecture-independent-axes.md)). Storybook is
+the canonical workbench ([ADR-0005](../adr/0005-storybook-canonical-workbench.md)). Scoped CSS, design
+tokens, typed variants, and native semantics remain governed by
+[ADR-0001](../adr/0001-design-system-scoped-css-tokens-variants.md).
 
-## The three layers
+## Classify on three axes
 
-| Layer                        | Lives in              | Knows the domain? | Owns                                                      |
-| ---------------------------- | --------------------- | ----------------- | --------------------------------------------------------- |
-| **Primitive**                | `src/lib/ui/`         | No                | Its own appearance + a11y; generic, reusable anywhere     |
-| **Presentational component** | `src/lib/components/` | Yes               | Its **entire appearance** (structure + styling)           |
-| **Container** (page/layout)  | `src/routes/**`       | Yes               | **Data + arrangement** only — never how a component looks |
+Every UI contribution answers three separate questions.
 
-- **Primitive** — domain-agnostic; never imports a domain type. `Button`, `Card`, `Badge`, plus
-  generic compositions promoted here (`StatCard`, `ChartPanel`, `AccentPanel`).
-- **Presentational component** — a domain-_aware_ composition. **Props in, callbacks out**: no data
-  fetching, no store/state access, no side effects (no navigation, no DOM reaching). Trivially
-  testable by rendering with props. `JobCard`, `InferenceCard`, `SessionRow`.
-- **Container** — owns data and arrangement (grids, flex, gaps, wiring data down and callbacks up,
-  composing components together). Ignorant of appearance; its `<style>` is **layout-only** (`display`,
-  `grid-template`, `flex`, `gap`, `max-width`, alignment) — never `border`, `background`,
-  `border-radius`, decorative `padding`, colour, or type treatment.
+### Composition: what does it compose?
 
-The primitive/presentational seam is one binary: **does this file import a domain type?**
-Domain-agnostic → `$lib/ui`; domain-aware → `$lib/components`.
+| Level           | Definition                                                                                                     | Typical examples                      |
+| --------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| **Foundations** | Non-component design decisions: tokens, typography, colour roles, spacing, radii, elevation, motion, and reset | Token and typography documentation    |
+| **Atoms**       | Irreducible controls or single-responsibility behavioural or layout components                                 | Button, Badge, Text                   |
+| **Molecules**   | Small reusable compositions solving one local UI purpose                                                       | Card header, filter field group       |
+| **Organisms**   | Substantial UI regions coordinating atoms or molecules                                                         | Viewer top bar, Session detail header |
+| **Templates**   | Content-agnostic page structures and layout contracts                                                          | Master-detail shell                   |
+| **Pages**       | Concrete, prop-driven feature views representing application states                                            | Metrics view, Insights view           |
 
-**Extraction is triggered, not upfront.** A container may compose primitives inline, but MUST extract
-a named presentational component the instant any one holds: it _repeats_, it _needs appearance CSS of
-its own_, or it _carries domain meaning worth testing_. Writing a `border`/`background` in a page's
-`<style>` is the signal the trigger has fired.
+The levels operate concurrently; they are not an implementation sequence. Classify by the component's
+public responsibility, not its line count or number of DOM nodes.
 
-## Where things live
+A level may import its own level or a less-composed level. Imports otherwise point towards foundations:
+templates may import templates, organisms, molecules, atoms, and foundations, while atoms may import only
+atoms and foundations. Foundations import no component level.
 
-| Path                             | Role                                                                                                                                                                 |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/lib/styles/tokens.css`      | Design tokens on `:root` (colour, spacing, radii, type, focus). Imported once in the root `+layout.svelte`. Plus the one global reset (`box-sizing`).                |
-| `src/lib/ui/`                    | Domain-agnostic primitives + `index.ts` barrel and `utils.ts` (`cn`).                                                                                                |
-| `src/lib/components/`            | Domain-aware presentational components.                                                                                                                              |
-| `src/lib/components/prototypes/` | Provisional presentational components under design; promote to `src/lib/components/` or delete ([ADR-0002](../adr/0002-prototypes-as-dev-only-sveltekit-routes.md)). |
-| `src/lib/actions/`               | Behavioural actions, e.g. `clickable` (keyboard/ARIA for non-button rows).                                                                                           |
+### Ownership: who may know what?
 
-Import primitives from the barrel: `import { Button, Card, Row } from '$lib/ui';`
+| Owner                    | Lives in                                                               | May know                                                                   | Must not own                                                      |
+| ------------------------ | ---------------------------------------------------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| **Shared design system** | `$lib/design-system/{foundations,atoms,molecules,organisms,templates}` | Generic UI contracts                                                       | Feature, route, domain, or SvelteKit runtime modules              |
+| **Feature UI**           | `$lib/features/<feature>/ui`                                           | Domain types and shared design-system APIs                                 | Loaders, navigation, application state, or effects                |
+| **Route orchestration**  | `src/routes/**`                                                        | SvelteKit runtime, server data, navigation, application state, and effects | Cards, grids, component styling, or recurring visual compositions |
 
-## The variant model (shadcn-style, CSS-native)
+Feature UI is props-in and callbacks-out. A route should normally render a feature page and wire its data
+and callbacks. Cross-feature imports are prohibited unless the dependency is promoted to an explicit
+shared public contract.
 
-Every primitive follows the same three-part contract, so they compose predictably:
+Use public exports. Do not deep-import another ownership boundary's implementation files.
+Load semantic tokens through the public `$lib/design-system/tokens.css` stylesheet entry point; do not
+deep-import the foundations stylesheet.
 
-1. **Variant/size props** resolve to `data-*` attributes on the root element; scoped CSS targets
-   them with attribute selectors (`.btn[data-variant='pill']`). This is our `cva` analogue — the
-   variant surface is data attributes, not generated class strings.
-2. **`class` prop** is merged after the base class via `cn()` — the override/extension hook.
-3. **`...rest` is spread** onto the root element, so `data-*`, `title`, `style`, `aria-*`, and event
-   handlers pass straight through.
+### Lifecycle: how safe is it to consume?
 
-```svelte
-<Button variant="link" onclick={openInsights}>Open in Insights →</Button>
-<Toggle pressed={st.tools.has(t)} tone={t} onclick={() => st.toggleTool(t)}>{t}</Toggle>
-<Card><CardTitle>By model</CardTitle>…<CardHint>{n} sessions</CardHint></Card>
-```
+| State            | Contract                                                                            |
+| ---------------- | ----------------------------------------------------------------------------------- |
+| **Experimental** | Available for active design work, explicitly tagged, with no stability promise      |
+| **Stable**       | Documented, tested, accessible, and supported as part of the public UI contract     |
+| **Deprecated**   | Temporarily retained with replacement guidance; new usage is prohibited             |
+| **Retired**      | Source and stories removed after consumers and migration evidence show it is unused |
 
-Tokens are always referenced by name (`var(--accent)`), never re-hardcoded. Colour tints for tool
-identity are tokens too (`--claude-tint`, etc.).
+Lifecycle is metadata, not a source directory. Storybook uses exactly one lifecycle tag:
+`experimental`, `stable`, or `deprecated`. Ownership separately uses `ownership-shared` or
+`ownership-feature-<feature>`.
 
-## Primitive inventory
+## Classification decision tree
 
-| Component                         | Purpose                               | Key variants / props                                               |
-| --------------------------------- | ------------------------------------- | ------------------------------------------------------------------ |
-| `Button`                          | Any action                            | `variant: solid\|outline\|ghost\|link\|pill`, `size`               |
-| `Toggle`                          | Pressable pill (`aria-pressed`)       | `pressed`, `tone: default\|claude\|codex\|pi\|model`               |
-| `Segmented<T>`                    | Single-select button group            | `options`, `value`, `onchange`, `variant: inset\|outline`, `label` |
-| `Badge`                           | Small status/identity tag             | `tone: neutral\|claude\|codex\|pi`                                 |
-| `Card` / `CardTitle` / `CardHint` | Panel container + header + hint       | composition                                                        |
-| `Kpi`                             | Big stat figure                       | `delta: none\|up\|down`, `unit?`                                   |
-| `Verdict`                         | Accent "reads as" callout             | `label` + children                                                 |
-| `Chip`                            | Compact tag; interactive if `onclick` | `onclick?`, `variant: default\|more`                               |
-| `Banner`                          | Inline notice bar                     | `tone: warn\|info`                                                 |
-| `Row` / `Spacer`                  | Flex row + flexible gap filler        | `Row.align`                                                        |
-| `Text`                            | Inline text treatment                 | `tone: default\|muted\|dim\|warn`, `mono?`                         |
-| `Grid` / `Col`                    | Column grid + spanning cell           | `Grid.cols`, `Col.span`                                            |
-| `MasterDetail`                    | 380px list rail + detail pane         | `list` + `detail` snippets                                         |
-| `SelectableRow`                   | Accessible selectable list row        | `selected`, `onselect`, `layout: block\|grid`                      |
+1. Is it a token, reset, or other non-component design decision? Put it in shared foundations.
+2. Is it domain-agnostic and reusable across features? Put it in the shared design system at the smallest
+   composition level matching its public responsibility.
+3. Does it use domain types or solve one feature's UI problem? Put it under that feature's `ui` boundary at
+   the composition level actually used.
+4. Does it own loaders, server data, navigation, application state, or effects? Keep that orchestration in
+   the route and pass serialisable data and callbacks into a feature page.
+5. Does it need genuine SvelteKit runtime behaviour to demonstrate? Follow the Storybook/scenario decision
+   in [`prototyping.md`](prototyping.md); do not put a prototype inside the production application.
 
-## Rules
+Do not create empty composition directories merely to complete the taxonomy.
 
-- **No raw interactive elements.** No `<a href="#">`, no `<span onclick>`/`<div onclick>` acting as
-  controls. Use `Button`/`Toggle`/`Chip`/`Segmented`/`SelectableRow`, or the `clickable` action for a
-  bespoke non-button element. `pnpm check` runs `svelte-check --fail-on-warnings`, so a11y warnings
-  fail the build.
-- **Compose, don't restyle.** Reach for a primitive/variant first. Genuinely one-off layout goes in
-  that component's own scoped `<style>`, tokens only — never a new shared stylesheet.
-- **Tokens only.** Don't hardcode a hex/spacing value that a token already names.
-- **Containers own layout, not looks.** A page/layout `<style>` holds layout properties only
-  (`display`, `grid-template`, `flex`, `gap`, `max-width`, alignment). A `border`, `background`,
-  `border-radius`, decorative `padding`, colour, or type treatment in a route means you should be
-  extracting a presentational component instead.
-- **Presentational components are pure.** Props in, callbacks out. No `load`/`fetch`, no store or
-  viewer-state access, no navigation or DOM reaching — the container passes those in as callbacks.
-- **Extract on the trigger.** Pull an inline composition into a named component the instant it
-  repeats, needs its own appearance CSS, or carries domain meaning worth testing.
+## Styling and variants
 
-## Extending
+Component-scoped CSS and named design tokens are the styling contract. Do not introduce Tailwind,
+CSS-in-JS, shared BEM component stylesheets, or duplicated design values that an existing token names.
 
-- **New variant** — add a `data-*` branch in the primitive's scoped `<style>` and widen the prop's
-  union type. Keep the base class untouched.
-- **New primitive** (domain-agnostic) — one file in `src/lib/ui/`, follow the contract (variant
-  `data-*` + `cn(class)` + `...rest`), export it from `index.ts`. Own its DOM and a11y. Never import a
-  domain type here.
-- **New presentational component** (domain-aware) — one file in `src/lib/components/` (or
-  `src/lib/components/prototypes/` while still under design). Compose primitives; own the whole look;
-  props in, callbacks out.
-- **New token** — add it to `tokens.css` under the right group; reference via `var(--…)`.
+Styled components follow the established variant contract where applicable:
 
-Primitive prop types are the source of truth for each component's API — read the `.svelte` file when
-the table above isn't enough.
+1. Typed variant and size props resolve to `data-*` attributes on the root element.
+2. Scoped CSS targets those attributes.
+3. The `class` prop is safely merged after the base class.
+4. Rest props safely forward native, `data-*`, `aria-*`, and event attributes supported by the root.
+
+Use Svelte 5 typed props, snippets, and callback props. Do not introduce React composition conventions.
+
+## Layout and markup
+
+Use semantic HTML whenever content has meaningful structure. A raw `<div>` is correct for a genuinely
+semantics-neutral internal grouping. Do not introduce meaningless wrapper components merely to remove
+`<div>`.
+
+Use a shared Stack, Row, Cluster, Grid, Container, Split, or similar component when its documented layout
+algorithm matches the requirement. Repeated layout algorithms belong in the shared design system. A
+feature-specific arrangement belongs in a feature organism, template, or page. A one-off internal layout
+may use token-driven scoped CSS in its owning component when extraction would not improve reuse or clarity.
+
+Route files do not own recurring visual layout. A narrow exception must explain why no existing shared
+algorithm or feature-owned composition fits and identify the permitted replacement when the exception can
+be removed.
+
+Interactive markup belongs in the atom or feature component that owns its behaviour and accessibility.
+Prefer native semantics. Use an existing public control when it represents the required behaviour; do not
+simulate controls with `<a href="#">`, `<span onclick>`, or `<div onclick>`. Feature-owned raw interactive
+markup requires a narrow documented `raw-interactive` architecture exception when no shared control fits.
+
+## Storybook contribution contract
+
+Colocate stories with the component, template, or page they exercise. Use typed `.stories.ts` files for
+ordinary prop-driven UI; use `.stories.svelte` only when Svelte snippets or composed markup make the story
+materially clearer.
+
+Story titles use the composition hierarchy: `Foundations`, `Atoms`, `Molecules`, `Organisms`, `Templates`,
+or `Pages`. Ownership and lifecycle remain metadata rather than extra folder hierarchies.
+
+- A stable public component has a story, useful usage guidance, component tests, and accessibility coverage.
+- Stories capture meaningful variants and loading, empty, error, selected, disabled, responsive, or dense
+  states where those states exist.
+- Prefer Autodocs for ordinary component APIs and curated MDX for foundations or architectural guidance.
+- Load global tokens and application styles once through Storybook preview configuration.
+- Do not depend on Storybook AI manifests, MCP support, Chromatic, or another hosted service.
+
+Storybook is not a SvelteKit integration test. Loaders, SSR, form actions, server modules, hooks, and real
+navigation are verified in the production application unless a separately justified sibling scenario
+application is introduced by a later decision.
+
+## Adding or changing UI
+
+- **New shared UI:** classify its composition level, keep it domain- and runtime-agnostic, expose it through
+  the curated public API, assign lifecycle and ownership metadata, and add the required story and tests.
+- **New feature UI:** keep it under one feature, consume shared public exports, remain props-in and
+  callbacks-out, and add stories for meaningful states.
+- **New variant:** widen the typed prop and add the corresponding `data-*` scoped-CSS branch.
+- **New foundation:** add it under shared foundations with a semantic name and document it in Storybook.
+- **Deprecation:** provide replacement guidance and mechanically prohibit new imports before removal.
+
+## Verification
+
+Run from `web/`:
+
+- `pnpm verify` — formatting, ESLint and architecture checks, Svelte type/accessibility checks, unit and
+  Storybook tests, and the static Storybook build.
+- `pnpm architecture:check` — focused dependency direction, ownership, public import, route, story metadata,
+  and obsolete-path checks.
+- `pnpm build` — production SvelteKit build when UI or route integration changes.
+- `pnpm storybook` — visually inspect representative states and responsive behaviour.
+- `pnpm storybook:test` — interaction and automated accessibility checks.
+- `pnpm storybook:build` — static workbench build.
+
+Architecture failures must name the allowed dependency or replacement. Exceptions must be narrow,
+documented, and tested; they must not encourage wrapper-heavy markup.

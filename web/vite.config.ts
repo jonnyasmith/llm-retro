@@ -1,7 +1,6 @@
-import { defineConfig } from 'vitest/config';
+import { defineConfig } from 'vite';
 import adapter from '@sveltejs/adapter-node';
 import { sveltekit } from '@sveltejs/kit/vite';
-import { svelteTesting } from '@testing-library/svelte/vite';
 
 export default defineConfig({
 	plugins: [
@@ -17,28 +16,5 @@ export default defineConfig({
 			// env loader there so `pnpm dev` sees DATABASE_URL et al.
 			env: { dir: '..' }
 		})
-	],
-	test: {
-		expect: { requireAssertions: true },
-		projects: [
-			{
-				extends: './vite.config.ts',
-				test: {
-					name: 'server',
-					environment: 'node',
-					include: ['src/**/*.{test,spec}.{js,ts}'],
-					exclude: ['src/**/*.svelte.{test,spec}.{js,ts}']
-				}
-			},
-			{
-				extends: './vite.config.ts',
-				plugins: [svelteTesting()],
-				test: {
-					name: 'client',
-					environment: 'happy-dom',
-					include: ['src/**/*.svelte.{test,spec}.{js,ts}']
-				}
-			}
-		]
-	}
+	]
 });

@@ -181,7 +181,7 @@ Fixed by [#6](https://github.com/jonnyasmith/llm-retro/issues/6); mechanism in [
 
 ## 6. Viewers
 
-Two Viewers over **one** extracted dataset — not two subsystems. Pinned by the working prototype `docs/prototypes/metrics-viewer.html` (branch `prototype/metrics-viewer`); fold the winning design into the real SvelteKit app at build.
+Two Viewers over **one** extracted dataset — not two subsystems. Pinned by the historical Metrics Viewer design on branch `prototype/metrics-viewer`; fold the validated design into the real SvelteKit app and preserve its representative states in Storybook.
 
 ### 6.1 Shared shell (coordination — [#7](https://github.com/jonnyasmith/llm-retro/issues/7) ↔ [#8](https://github.com/jonnyasmith/llm-retro/issues/8))
 
@@ -239,7 +239,7 @@ Fixed by [#5](https://github.com/jonnyasmith/llm-retro/issues/5); LLM reconcilia
 3. **Import Job (Python image)** — per-Tool extractors → Normalised Session Model, three-bucket classification with dropped-count reporting, idempotent upsert, watermarking. Label the image (§2.3).
 4. **Docker-API discovery + Jobs Viewer** in the web app (`dockerode`): list labelled images, render trigger forms from `.params`, launch one-shot, tail status.
 5. **Signal Jobs** — the 8 Signals (§4) incl. Turn derivation; version-stamped.
-6. **Metrics Viewer** (§6.2) over real Signals; fold the prototype's Overview + Sessions design.
+6. **Metrics Viewer** (§6.2) over real Signals; fold the validated Overview + Sessions design into feature-owned UI.
 7. **Inference Jobs** (§5) — subscription-authed CLI in-container; stamp-gated recompute; provenance.
 8. **Insights Viewer** (§6.3) — the three layouts over real Inferences; cross-links to Metrics.
 
@@ -265,7 +265,7 @@ Ruled beyond the destination; the framework reserves the seams (see §2) but v1 
   - **Signal functions** (§4) — pure functions over a fixed Normalised Session fixture; assert exact values. Especially response-latency windowing (tool-execution gaps excluded) and hour-of-day tz bucketing (DST boundary).
   - **Re-run semantics** (§7) — idempotent upsert (double-import = no duplicate rows), watermark skip, version-bump recompute; and the §5.3 stamp-gated Inference no-op.
 - **Inference Jobs:** do **not** assert model output content (non-deterministic). Test the _contract_ — output parses to the §6.4 shape, provenance stamp populated, malformed response fails loud (bounded retry then job failure), stamp-gated recompute is a no-op on unchanged stamp. Mock the CLI boundary.
-- **Prior art:** the throwaway prototype (`docs/prototypes/metrics-viewer.html`) is the interaction reference for Viewer behaviour, not a test target. No test suite exists yet — establish Python (`pytest`) for Jobs and the SvelteKit default (`vitest`) for the web app as the first build step introduces each.
+- **Prior art:** the historical Metrics Viewer design on branch `prototype/metrics-viewer` is the interaction reference for Viewer behaviour, not a test target. Capture maintained UI states in Storybook and test application behaviour through Vitest and browser checks; use `pytest` for Jobs.
 
 ## Out of Scope
 
@@ -273,7 +273,7 @@ See §9. In short: cost tracking, ML/Jupyter/indexing/conversational analyst, DA
 
 ## Unresolved Questions
 
-- **Overview section order/visibility** — fixed order in the prototype; decide at build whether user-configurable in v1 or later (flagged in [#7](https://github.com/jonnyasmith/llm-retro/issues/7)).
+- **Overview section order/visibility** — fixed order in the historical Metrics Viewer design; decide at build whether user-configurable in v1 or later (flagged in [#7](https://github.com/jonnyasmith/llm-retro/issues/7)).
 - **Insights layout selection** — all three (Digest/Workbench/Explorer) ship; the "which is primary" call is deferred until real extracted data/model outputs exist to judge against (flagged in [#8](https://github.com/jonnyasmith/llm-retro/issues/8)).
 - **Inference provenance storage granularity** — per-Inference raw-response pointer vs per-run stamp; confirm when the Inference schema lands (flagged in [#8](https://github.com/jonnyasmith/llm-retro/issues/8)).
 - **`raw` retention policy** — when/whether to drop `raw` for cold Sessions to reclaim disk (the model permits it; the trigger is unspecified).
