@@ -9,8 +9,7 @@ const config: StorybookConfig = {
 		'@storybook/addon-vitest',
 		'@storybook/addon-svelte-csf'
 	],
-	framework: '@storybook/sveltekit',
-	docs: { autodocs: 'tag' }
+	framework: '@storybook/sveltekit'
 };
 
 export default config;
