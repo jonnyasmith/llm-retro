@@ -16,6 +16,7 @@ export default defineConfig({
 				test: {
 					name: 'server',
 					environment: 'node',
+					setupFiles: ['./src/lib/mocks/vitest-setup.ts'],
 					include: ['src/**/*.{test,spec}.{js,ts}', 'scripts/**/*.test.ts'],
 					exclude: ['src/**/*.svelte.{test,spec}.{js,ts}']
 				}
@@ -26,6 +27,7 @@ export default defineConfig({
 				test: {
 					name: 'client',
 					environment: 'happy-dom',
+					setupFiles: ['./src/lib/mocks/vitest-setup.ts'],
 					include: ['src/**/*.svelte.{test,spec}.{js,ts}']
 				}
 			},

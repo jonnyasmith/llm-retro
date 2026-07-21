@@ -1,6 +1,8 @@
 {
   "cSpell.language": "en-GB",
   "cSpell.words": [
+    "agnostically",
+    "autodocs",
     "incl",
     "incrementality",
     "linters",
@@ -13,6 +15,7 @@
     "unparseable",
     "unpromoted",
     "upserts",
+    "Vitest",
     "WORKTREE"
   ]
 }

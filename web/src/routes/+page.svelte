@@ -1,6 +1,8 @@
 <script lang="ts">
-	import { resolve } from '$app/paths';
 	import { ControlPlanePage } from '$lib/features/control-plane';
+	import type { PageData } from './$types';
+
+	let { data }: { data: PageData } = $props();
 </script>
 
 <svelte:head>
@@ -8,4 +10,4 @@
 	<meta name="description" content="Retro insights for AI coding Sessions" />
 </svelte:head>
 
-<ControlPlanePage healthHref={resolve('/api/health')} />
+<ControlPlanePage health={data.health} />

@@ -14,6 +14,7 @@ Run from `web/`:
 - **`pnpm storybook`** — canonical UI workbench for components, templates, and mocked page states.
 - **`pnpm storybook:test`** — Storybook interaction and accessibility tests.
 - **`pnpm storybook:build`** — static Storybook build; run for changes to UI, stories, or Storybook configuration.
+- **`pnpm dev:mock`** — the real application against the MSW mock network with no database; use it for routed, loader-driven prototypes.
 - **`pnpm dev`** — production-application development server; use it to smoke-test real route integration.
 
 Use `pnpm format` to apply Prettier.
@@ -30,4 +31,4 @@ Read `docs/agents/design-system.md` before building or changing UI.
 - Web-scoped vocabulary → `docs/agents/domain.md` (solution-wide terms → `../docs/agents/domain.md`)
 - Web-scoped decisions → `docs/adr/`
 - Design system → `docs/agents/design-system.md`
-- UI experiments — Storybook first; SvelteKit scenarios only for genuine runtime behaviour → `docs/agents/prototyping.md`
+- UI experiments — Storybook for prop-driven states; the mock-mode app for routed, loader-driven flows → `docs/agents/prototyping.md`
