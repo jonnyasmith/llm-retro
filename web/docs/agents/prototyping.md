@@ -80,5 +80,6 @@ Run from `web/`:
 - `pnpm build` — prove production route integration when relevant.
 - `pnpm verify` — run the complete repository gate.
 
-No hosted visual service or external account is part of this workflow; review by running the two surfaces
-locally.
+No visual or snapshot regression testing is part of this workflow — not a hosted service and not a
+self-hosted pixel-diff suite (see [ADR-0005](../adr/0005-storybook-canonical-workbench.md)). Review by
+running the two surfaces locally and inspecting them.

@@ -110,8 +110,10 @@ ownership as example uses.
 4. Move only genuinely route-dependent experiments into a thin sibling SvelteKit scenario app, with
    a reason and exit criterion recorded for each scenario. Delete the in-app `/prototype` gallery
    once equivalent story/scenario coverage exists.
-5. Add Storybook build and story tests to the repository verification gate. Decide separately whether
-   hosted Chromatic or deterministic Playwright screenshots are worth their cost.
+5. Add Storybook build and story tests to the repository verification gate. **Resolved:** visual/snapshot
+   regression — hosted Chromatic or a self-hosted Playwright screenshot suite — is out of scope for
+   prototyping and was deliberately not adopted; see the consequences in
+   [ADR-0005](../adr/0005-storybook-canonical-workbench.md).
 
 The decision should be revisited if the compatibility spike exposes material Svelte/Vite friction, or
 if most important UI states cannot be represented without extensive SvelteKit mocks. In that case,

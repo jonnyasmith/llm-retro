@@ -51,7 +51,13 @@ harness is retired.
   navigation; those remain production-application concerns.
 - Storybook is a maintained toolchain dependency and must be kept compatible with SvelteKit, Vite, Vitest,
   TypeScript, Node, and pnpm.
-- No hosted visual service or external account is adopted. Any visual-regression service is a separate
-  decision requiring explicit approval; this decision still requires render tests and visual inspection.
+- Visual/snapshot regression is out of scope, hosted or self-hosted alike. Neither a service (e.g.
+  Chromatic) nor a repository-owned pixel-diff suite (e.g. Vitest/Playwright `toMatchScreenshot` with
+  committed baselines) is part of this workbench; a self-hosted one was built and removed as over-scoped
+  for a prototyping loop. Verification here is render tests, interaction/accessibility checks, and visual
+  inspection by running the workbench. Adopting any pixel-diff regression is a separate ADR requiring
+  explicit approval — its recurring cost is a fixed baseline environment (fonts/anti-aliasing must match
+  byte-for-byte, and Apple-Silicon emulation cannot reproduce native x86 rasterisation), which only earns
+  its keep once the design system is stable, not during prototyping.
 - Storybook AI manifests and MCP support are not part of the architecture. Agent legibility comes from
   stories, types, exports, documentation, import rules, and verification failures.
