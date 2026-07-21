@@ -21,6 +21,10 @@ function freezeMotion() {
 		transition-duration: 0s !important;
 		transition-delay: 0s !important;
 		caret-color: transparent !important;
+		/* Force greyscale AA: LCD sub-pixel text rendering is non-deterministic
+		   run-to-run in headless Chromium and was flaking text-heavy stories. */
+		-webkit-font-smoothing: antialiased !important;
+		text-rendering: geometricPrecision !important;
 	}`;
 	document.head.appendChild(style);
 }
@@ -29,14 +33,20 @@ if (enabled) {
 	afterEach(async (ctx) => {
 		const storyId = ctx.task?.meta?.storyId as string | undefined;
 		if (!storyId) return;
-		// A story opts out with `parameters: { visual: { disable: true } }` —
-		// for invisible primitives (spacers) that have no stable pixels to diff.
-		const story = (ctx as { story?: { parameters?: { visual?: { disable?: boolean } } } }).story;
-		if (story?.parameters?.visual?.disable) return;
+		// Per-story visual controls:
+		//   disable  — skip capture (invisible primitives with no stable pixels)
+		//   settleMs — wait before capture (async/canvas renders like ECharts that
+		//              are not painted yet when the story's run resolves)
+		const story = (
+			ctx as { story?: { parameters?: { visual?: { disable?: boolean; settleMs?: number } } } }
+		).story;
+		const visual = story?.parameters?.visual;
+		if (visual?.disable) return;
 		freezeMotion();
 		// Wait for web fonts to swap in — otherwise a screenshot can race the
 		// font load and diff against a fallback glyph (notably monospace text).
 		await document.fonts.ready;
+		if (visual?.settleMs) await new Promise((resolve) => setTimeout(resolve, visual.settleMs));
 		const root =
 			document.querySelector('#storybook-root') ?? document.querySelector('#root') ?? document.body;
 		await expect(page.elementLocator(root as Element)).toMatchScreenshot(storyId);

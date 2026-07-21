@@ -67,8 +67,11 @@ if (native) {
 		'CI=1',
 		'-v',
 		`${webDir}:/work`,
+		// Named volume (not anonymous) so Linux node_modules persists between
+		// runs — `pnpm install` becomes a fast no-op instead of a ~55s reinstall,
+		// while still masking the host (macOS) node_modules.
 		'-v',
-		'/work/node_modules',
+		'llm-retro-visual-node-modules:/work/node_modules',
 		'-v',
 		'llm-retro-pnpm-store:/root/.local/share/pnpm/store',
 		'-w',

@@ -25,10 +25,19 @@ git-ignored. A developer regenerates baselines with `pnpm test:visual:update` (D
 ## Contract
 
 - **Gating** — capture is opt-in via `VITE_VISUAL=1`; ordinary `pnpm storybook:test` never diffs pixels.
-- **Determinism** — before each capture, animations/transitions/caret are frozen and `document.fonts.ready`
-  is awaited (a font-load race otherwise flakes monospace text).
-- **Opt-out** — a story with `parameters: { visual: { disable: true } }` is not screenshotted, for invisible
-  primitives (e.g. spacers) that have no stable pixels.
+- **Determinism** — screenshots must be pixel-stable run-to-run or the gate is noise. This needs several
+  layers working together:
+  - _Rendering_ — Chromium launches with software raster and fixed colour/hinting
+    (`--disable-gpu`, `--force-color-profile=srgb`, `--font-render-hinting=none`); the setup forces greyscale
+    text AA. GPU raster and LCD sub-pixel text are otherwise non-deterministic between runs.
+  - _Timing_ — animations/caret are frozen and `document.fonts.ready` is awaited before capture.
+  - _Tolerance_ — a small pixelmatch tolerance (`threshold` + `allowedMismatchedPixelRatio`) absorbs
+    irreducible sub-pixel jitter. **This config must live at `test.browser.expect.toMatchScreenshot`** in the
+    Storybook project; at top-level `test.expect` it is silently ignored and the matcher runs at zero
+    tolerance (every sub-pixel diff then fails).
+- **Opt-out / settle** — `parameters: { visual: { disable: true } }` skips a story (invisible primitives with
+  no stable pixels); `parameters: { visual: { settleMs: N } }` waits before capture, for async/canvas renders
+  (e.g. ECharts, which is dynamically imported and must also set `animation: false` for a stable frame).
 - **New/changed baseline fails the run** — a missing or differing baseline is a red test, so CI gates on it
   and a human reviews the diff before committing the update. This is Chromatic's accept-changes loop without
   the service.
