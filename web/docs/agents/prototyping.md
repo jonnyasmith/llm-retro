@@ -17,6 +17,11 @@ Prototyping runs on two surfaces, chosen by what is being exercised:
   network with no database, for full-fidelity routed prototypes: real routes, real loaders, real feature
   pages, driven by mock data. It renders client-side so the browser worker can intercept `/api/*` calls.
 
+Mock mode is activated by the `PUBLIC_MOCK_API` environment variable, which `pnpm dev:mock` sets. Because
+the promise is a _database-free_ run, server code that would reach the database or another backend at
+startup — for example the migration step in `hooks.server.ts` — must no-op when that variable is set. Client
+requests are answered by MSW; the server never touches the backend.
+
 Keep fixtures beside the story or feature that owns them. An experimental component stays in its normal
 composition and ownership location and carries the `experimental` lifecycle tag; experimentation is not a
 source folder. The production SvelteKit application must not contain `/prototype` routes, prototype guards

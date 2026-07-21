@@ -121,9 +121,9 @@ or `Pages`. Ownership and lifecycle remain metadata rather than extra folder hie
 - Load global tokens and application styles once through Storybook preview configuration.
 - Do not depend on Storybook AI manifests, MCP support, Chromatic, or another hosted service.
 
-Storybook is not a SvelteKit integration test. Loaders, SSR, form actions, server modules, hooks, and real
-navigation are verified in the production application unless a separately justified sibling scenario
-application is introduced by a later decision.
+Storybook is not a SvelteKit integration test. Loaders, navigation, and layout inheritance are exercised in
+the mock-mode application (`pnpm dev:mock`, see [`prototyping.md`](prototyping.md)); SSR, form actions,
+server modules, and hooks are verified in the production application.
 
 ## Adding or changing UI
 
