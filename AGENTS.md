@@ -18,7 +18,7 @@
 
 ## Standing rules — apply at every level
 
-These two rules hold in every context — this root and every working target. Each target's `AGENTS.md` points back here for them.
+These rules hold in every context — this root and every working target. Each target's `AGENTS.md` points back here for them.
 
 ### Read before you name
 
@@ -27,6 +27,10 @@ Before writing anything that names a domain concept — an issue title, a test n
 ### Read before you decide or diverge
 
 Before proposing an architectural change, or working in an area governed by a decision, scan the `docs/adr/` filenames for the context (they are titled) and read only the ones touching your area — the root `docs/adr/` for system-wide decisions, the target's for its internal ones. If your output would contradict an ADR, surface it explicitly ("Contradicts ADR-0004 (signals are deterministic, inferences interpretive) — but worth reopening because…") rather than silently overriding it.
+
+### Comment only what the code cannot say
+
+A code comment explains non-obvious _local_ intent — why this line is surprising, a constraint the reader cannot infer from the code itself. It is not where architecture, rationale, or how a feature works across files lives; that belongs in ADRs and the agent guides, which outlast any one file. Never narrate a feature's existence in files that merely participate in it, never restate what the code already says, and never leave comments that only made sense while writing this change (the plan, the migration, the "now we also…"). If a fact matters project-wide, put it in its durable home and let the code stay quiet.
 
 ## Final review loop
 

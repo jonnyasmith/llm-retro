@@ -3,12 +3,7 @@ import { env } from '$env/dynamic/public';
 
 const mockApi = env.PUBLIC_MOCK_API === 'true';
 
-/**
- * Mock mode (`pnpm dev:mock`) runs the real application against the MSW mock
- * network with no database. It renders client-side so the browser worker can
- * intercept the loaders' `/api/*` requests; the worker never ships to
- * production because the import is guarded by `import.meta.env.DEV`.
- */
+// Client-render so the worker can intercept the loaders' requests.
 export const ssr = !mockApi;
 
 export const load = async () => {

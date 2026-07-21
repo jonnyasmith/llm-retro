@@ -4,7 +4,6 @@ import { handlers } from '../src/lib/mocks/handlers';
 import '../src/lib/design-system/tokens.css';
 import './preview.css';
 
-// One mock network for every story; a story overrides it via `parameters.msw`.
 initialize({ onUnhandledRequest: 'bypass' }, handlers);
 
 const preview: Preview = {
