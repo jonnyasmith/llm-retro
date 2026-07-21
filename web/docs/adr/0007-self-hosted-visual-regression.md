@@ -17,10 +17,14 @@ comparison. Fonts and anti-aliasing differ across operating systems, so a baseli
 macOS machine would false-positive everywhere else.
 
 Therefore baselines are **only ever produced in one environment**: the pinned Playwright Linux image
-(`mcr.microsoft.com/playwright:v1.60.0-noble`, kept in lockstep with the installed `playwright` version).
-`scripts/visual.mjs` runs the suite inside that image locally; CI (`.github/workflows/visual.yml`) runs the
-same image. Committed baselines carry a `-chromium-linux` suffix; macOS `-darwin` captures are throwaway and
-git-ignored. A developer regenerates baselines with `pnpm test:visual:update` (Docker) and commits the PNGs.
+(`mcr.microsoft.com/playwright:v1.60.0-noble`, kept in lockstep with the installed `playwright` version),
+**pinned to `linux/amd64`**. Same image is not enough — font rasterisation also differs between `arm64` and
+`amd64`, so an Apple-Silicon Mac running the native arm64 image produces baselines that fail on x86 CI runners
+(text stories diverge while simple shapes match). `scripts/visual.mjs` forces `--platform=linux/amd64`
+(emulated on Apple Silicon, slower but pixel-identical to CI); CI (`.github/workflows/visual.yml`) runs the
+same image on amd64 runners. Committed baselines carry a `-chromium-linux` suffix; macOS `-darwin` captures are
+throwaway and git-ignored. A developer regenerates baselines with `pnpm test:visual:update` (Docker) and
+commits the PNGs.
 
 ## Contract
 

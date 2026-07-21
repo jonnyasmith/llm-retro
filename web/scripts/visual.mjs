@@ -61,6 +61,11 @@ if (native) {
 		'--rm',
 		'--init',
 		'--ipc=host',
+		// Pin the architecture to match CI (GitHub runners are x86_64). Font
+		// rasterisation differs between arm64 and amd64, so an Apple-Silicon Mac
+		// rendering the arm64 image would produce baselines that fail on CI. This
+		// emulates amd64 (slower) so local baselines are pixel-identical to CI.
+		'--platform=linux/amd64',
 		'-e',
 		'VITE_VISUAL=1',
 		'-e',
@@ -69,9 +74,10 @@ if (native) {
 		`${webDir}:/work`,
 		// Named volume (not anonymous) so Linux node_modules persists between
 		// runs — `pnpm install` becomes a fast no-op instead of a ~55s reinstall,
-		// while still masking the host (macOS) node_modules.
+		// while still masking the host (macOS) node_modules. Arch-suffixed because
+		// native binaries (esbuild, playwright) are not portable across platforms.
 		'-v',
-		'llm-retro-visual-node-modules:/work/node_modules',
+		'llm-retro-visual-node-modules-amd64:/work/node_modules',
 		'-v',
 		'llm-retro-pnpm-store:/root/.local/share/pnpm/store',
 		'-w',
