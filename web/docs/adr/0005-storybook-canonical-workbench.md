@@ -1,6 +1,6 @@
 # Storybook is the canonical UI workbench
 
-**Status:** accepted — supersedes [ADR-0002](0002-prototypes-as-dev-only-sveltekit-routes.md)
+**Status:** accepted — supersedes [ADR-0002](0002-prototypes-as-dev-only-sveltekit-routes.md); amended by [ADR-0006](0006-msw-mock-layer-and-mock-mode-application.md)
 
 Storybook is the canonical workbench for foundations, shared and feature-owned components, templates,
 and mocked prop-driven page states. The production SvelteKit application is not a prototype host.
