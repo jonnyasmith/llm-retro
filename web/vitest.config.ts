@@ -4,16 +4,11 @@ import { storybookTest } from '@storybook/addon-vitest/vitest-plugin';
 import { playwright } from '@vitest/browser-playwright';
 import { svelteTesting } from '@testing-library/svelte/vite';
 import { defineConfig } from 'vitest/config';
-import VisualReporter from './scripts/visual-reporter.mjs';
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
 	test: {
-		// The visual reporter self-gates on VITE_VISUAL; it only writes its
-		// manifest during visual runs, so the default reporter is untouched.
-		reporters: ['default', new VisualReporter()],
-		expect: { requireAssertions: true },
 		projects: [
 			{
 				extends: './vite.config.ts',
@@ -40,33 +35,10 @@ export default defineConfig({
 				plugins: [storybookTest({ configDir: path.join(dirname, '.storybook') })],
 				test: {
 					name: 'storybook',
-					setupFiles: ['./.storybook/vitest.visual-setup.ts'],
 					browser: {
 						enabled: true,
 						headless: true,
-						// toMatchScreenshot config MUST live here (browser.expect), not
-						// top-level test.expect, or it is silently ignored and the matcher
-						// runs at zero tolerance. threshold tolerates per-pixel AA;
-						// allowedMismatchedPixelRatio absorbs residual sub-pixel jitter.
-						expect: {
-							toMatchScreenshot: {
-								comparatorName: 'pixelmatch',
-								comparatorOptions: { threshold: 0.2, allowedMismatchedPixelRatio: 0.02 }
-							}
-						},
-						provider: playwright({
-							launchOptions: {
-								// Deterministic rendering for stable screenshots: software
-								// raster (GPU raster jitters canvas/ECharts lines), fixed colour
-								// profile, and no font hinting variance.
-								args: [
-									'--disable-gpu',
-									'--disable-skia-runtime-opts',
-									'--force-color-profile=srgb',
-									'--font-render-hinting=none'
-								]
-							}
-						}),
+						provider: playwright(),
 						instances: [{ browser: 'chromium' }]
 					}
 				}

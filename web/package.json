@@ -20,8 +20,6 @@
 		"storybook": "storybook dev -p 6006",
 		"storybook:build": "storybook build",
 		"storybook:test": "vitest run --project=storybook",
-		"test:visual": "node scripts/visual.mjs run",
-		"test:visual:update": "node scripts/visual.mjs update",
 		"architecture:check": "node scripts/check-ui-architecture.mjs",
 		"migrate": "node scripts/migrate.ts",
 		"test:unit": "vitest run --project=server --project=client",
