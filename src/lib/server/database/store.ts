@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, count, desc, eq, sql } from 'drizzle-orm';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Database } from './connection';
@@ -138,6 +138,40 @@ export function listJobRuns(
     .where(and(eq(jobRuns.type, identity.type), eq(jobRuns.scope, scope)))
     .orderBy(desc(jobRuns.id))
     .limit(limit)
+    .all();
+}
+
+export function getOverviewTotals(database: Database) {
+  const totals = database
+    .select({
+      interactionCount: count(),
+      totalTokens: sql<number>`coalesce(sum(
+        coalesce(${interactions.mainInputTokens}, 0) +
+        coalesce(${interactions.mainOutputTokens}, 0) +
+        coalesce(${interactions.mainCacheReadTokens}, 0) +
+        coalesce(${interactions.mainCacheWriteTokens}, 0) +
+        coalesce(${interactions.subInputTokens}, 0) +
+        coalesce(${interactions.subOutputTokens}, 0) +
+        coalesce(${interactions.subCacheReadTokens}, 0) +
+        coalesce(${interactions.subCacheWriteTokens}, 0)
+      ), 0)`,
+    })
+    .from(interactions)
+    .get();
+
+  return totals ?? { interactionCount: 0, totalTokens: 0 };
+}
+
+export function getActivityHeatmap(database: Database) {
+  return database
+    .select({
+      localDow: interactions.localDow,
+      localHour: interactions.localHour,
+      interactionCount: count(),
+    })
+    .from(interactions)
+    .groupBy(interactions.localDow, interactions.localHour)
+    .orderBy(interactions.localDow, interactions.localHour)
     .all();
 }
 

@@ -12,6 +12,8 @@ import {
   settings,
 } from './schema';
 import {
+  getActivityHeatmap,
+  getOverviewTotals,
   getSettings,
   insertInteraction,
   listJobRuns,
@@ -186,6 +188,96 @@ describe('analytical store', () => {
       expect(stored.mainInputTokens).toBe(0);
       expect(stored.mainOutputTokens).toBeNull();
       expect(stored.subInputTokens).toBeNull();
+    } finally {
+      connection.sqlite.close();
+    }
+  });
+
+  it('aggregates Interaction and complete main-plus-sub token totals', async () => {
+    const connection = await createDatabase();
+
+    try {
+      const { project, session } = await createSessionFixture(
+        connection.database,
+      );
+      const facts = [
+        {
+          openingUserRecordId: 'record-1',
+          mainInputTokens: 11,
+          mainOutputTokens: 13,
+          mainCacheReadTokens: 17,
+          mainCacheWriteTokens: 19,
+          subInputTokens: 23,
+          subOutputTokens: 29,
+          subCacheReadTokens: 31,
+          subCacheWriteTokens: 37,
+          localDow: 1,
+          localHour: 9,
+          localDate: '2025-01-06',
+        },
+        {
+          openingUserRecordId: 'record-2',
+          mainInputTokens: null,
+          mainOutputTokens: null,
+          mainCacheReadTokens: 5,
+          mainCacheWriteTokens: null,
+          subInputTokens: null,
+          subOutputTokens: 0,
+          subCacheReadTokens: null,
+          subCacheWriteTokens: 7,
+          localDow: 1,
+          localHour: 9,
+          localDate: '2025-01-13',
+        },
+        {
+          openingUserRecordId: 'record-3',
+          mainInputTokens: null,
+          mainOutputTokens: null,
+          mainCacheReadTokens: null,
+          mainCacheWriteTokens: null,
+          subInputTokens: null,
+          subOutputTokens: null,
+          subCacheReadTokens: null,
+          subCacheWriteTokens: null,
+          localDow: 6,
+          localHour: 23,
+          localDate: '2025-01-18',
+        },
+      ] as const;
+      for (const [index, fact] of facts.entries()) {
+        insertInteraction(connection.database, {
+          sessionId: session.id,
+          harness: 'codex',
+          projectId: project.id,
+          model: 'gpt-5.1-codex-max',
+          modelRaw: 'gpt-5.1-codex-max',
+          timestamp: index,
+          ...fact,
+        });
+      }
+
+      expect(getOverviewTotals(connection.database)).toEqual({
+        interactionCount: 3,
+        totalTokens: 192,
+      });
+      expect(getActivityHeatmap(connection.database)).toEqual([
+        { localDow: 1, localHour: 9, interactionCount: 2 },
+        { localDow: 6, localHour: 23, interactionCount: 1 },
+      ]);
+    } finally {
+      connection.sqlite.close();
+    }
+  });
+
+  it('returns explicit zero analytics for an empty Interaction store', async () => {
+    const connection = await createDatabase();
+
+    try {
+      expect(getOverviewTotals(connection.database)).toEqual({
+        interactionCount: 0,
+        totalTokens: 0,
+      });
+      expect(getActivityHeatmap(connection.database)).toEqual([]);
     } finally {
       connection.sqlite.close();
     }
