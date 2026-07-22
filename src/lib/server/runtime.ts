@@ -9,8 +9,11 @@ export function initialiseRuntime(database: Database) {
   reconcileInterruptedJobRuns(database);
   const jobEvents = new JobEventSource();
   const jobBackend = new InProcessJobBackend(database);
-  jobBackend.register('stub', stubJobHandler);
-  jobBackend.register('ingest', createClaudeIngestHandler());
+  jobBackend.registerScoped('stub', stubJobHandler);
+  jobBackend.register(
+    { type: 'ingest', scope: 'claude' },
+    createClaudeIngestHandler(),
+  );
   const dispatcher = new JobDispatcher(database, jobEvents, {
     backend: jobBackend,
   });

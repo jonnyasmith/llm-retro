@@ -6,6 +6,7 @@ import { openDatabase } from './connection';
 import {
   checkpoints,
   interactions,
+  jobRuns,
   projects,
   sessions,
   settings,
@@ -13,6 +14,7 @@ import {
 import {
   getSettings,
   insertInteraction,
+  listJobRuns,
   resolveDefaultLogSources,
   updateSettings,
 } from './store';
@@ -212,6 +214,71 @@ describe('analytical store', () => {
         lastCompleteRecordByteOffset: 512,
         fileSize: 1024,
       });
+    } finally {
+      connection.sqlite.close();
+    }
+  });
+
+  it('reads harness-scoped Job run history newest-first with timing', async () => {
+    const connection = await createDatabase();
+
+    try {
+      connection.database
+        .insert(jobRuns)
+        .values([
+          {
+            type: 'ingest',
+            scope: 'claude',
+            correlationId: '11111111-1111-4111-8111-111111111111',
+            status: 'succeeded',
+            startedAt: 100,
+            finishedAt: 150,
+            filesTotal: 4,
+            filesDone: 4,
+          },
+          {
+            type: 'stub',
+            scope: '',
+            correlationId: '22222222-2222-4222-8222-222222222222',
+            status: 'succeeded',
+            startedAt: 200,
+            finishedAt: 250,
+          },
+          {
+            type: 'ingest',
+            scope: 'claude',
+            correlationId: '33333333-3333-4333-8333-333333333333',
+            status: 'running',
+            startedAt: 300,
+            filesTotal: 8,
+            filesDone: 3,
+          },
+        ])
+        .run();
+
+      expect(
+        listJobRuns(connection.database, {
+          type: 'ingest',
+          scope: 'claude',
+        }),
+      ).toEqual([
+        expect.objectContaining({
+          correlationId: '33333333-3333-4333-8333-333333333333',
+          status: 'running',
+          startedAt: 300,
+          finishedAt: null,
+          filesTotal: 8,
+          filesDone: 3,
+        }),
+        expect.objectContaining({
+          correlationId: '11111111-1111-4111-8111-111111111111',
+          status: 'succeeded',
+          startedAt: 100,
+          finishedAt: 150,
+          filesTotal: 4,
+          filesDone: 4,
+        }),
+      ]);
     } finally {
       connection.sqlite.close();
     }

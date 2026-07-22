@@ -9,6 +9,7 @@ import {
   unique,
   uniqueIndex,
 } from 'drizzle-orm/sqlite-core';
+import { jobRunStatuses, type JobRunStatus } from '../../jobs/contracts';
 
 export const projects = sqliteTable('project', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -93,15 +94,7 @@ export const checkpoints = sqliteTable(
   ],
 );
 
-export const jobRunStatuses = [
-  'pending',
-  'running',
-  'succeeded',
-  'failed',
-  'interrupted',
-] as const;
-
-export type JobRunStatus = (typeof jobRunStatuses)[number];
+export { jobRunStatuses, type JobRunStatus };
 
 export const jobRuns = sqliteTable(
   'job_run',

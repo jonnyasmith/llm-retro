@@ -1,24 +1,18 @@
 import { bootstrap } from '$lib/server/bootstrap';
-import { jobRuns, type JobRunStatus } from '$lib/server/database/schema';
+import {
+  isTerminalJobRunStatus,
+  type JobDonePayload,
+  type JobLogPayload,
+  type JobProgressPayload,
+} from '$lib/jobs/contracts';
+import { jobRuns } from '$lib/server/database/schema';
 import type { JobEvent, JobProgressEvent } from '$lib/server/jobs/events';
 import { eq } from 'drizzle-orm';
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
-const terminalStatuses = new Set<JobRunStatus>([
-  'succeeded',
-  'failed',
-  'interrupted',
-]);
-
-function isTerminalStatus(
-  status: JobRunStatus,
-): status is 'succeeded' | 'failed' | 'interrupted' {
-  return terminalStatuses.has(status);
-}
-
 function serialise(event: JobEvent): string {
-  const payload =
+  const payload: JobProgressPayload | JobLogPayload | JobDonePayload =
     event.kind === 'progress'
       ? {
           correlation_id: event.correlationId,
@@ -52,35 +46,6 @@ export const GET: RequestHandler = ({ params, request }) => {
   if (!run) error(404, 'Job run not found');
 
   const encoder = new TextEncoder();
-  const history = [...bootstrap.jobEvents.history(run.correlationId)];
-  const latestProgress = history.findLast(
-    (event): event is JobProgressEvent => event.kind === 'progress',
-  );
-  if (
-    !latestProgress ||
-    latestProgress.filesDone !== run.filesDone ||
-    latestProgress.filesTotal !== run.filesTotal
-  ) {
-    history.unshift({
-      kind: 'progress',
-      correlationId: run.correlationId,
-      filesDone: run.filesDone,
-      filesTotal: run.filesTotal,
-      timestamp: run.startedAt ?? Date.now(),
-    });
-  }
-
-  const historyHasTerminal = history.some((event) => event.kind === 'done');
-  if (isTerminalStatus(run.status) && !historyHasTerminal) {
-    history.push({
-      kind: 'done',
-      correlationId: run.correlationId,
-      status: run.status,
-      error: run.error,
-      timestamp: run.finishedAt ?? Date.now(),
-    });
-  }
-
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       let closed = false;
@@ -107,13 +72,37 @@ export const GET: RequestHandler = ({ params, request }) => {
         cleanup();
         return;
       }
-      for (const event of history) send(event);
+      unsubscribe = bootstrap.jobEvents.subscribe(run.correlationId, send);
       if (closed) return;
-      unsubscribe = bootstrap.jobEvents.subscribe(
-        run.correlationId,
-        send,
-        false,
+      const currentHistory = bootstrap.jobEvents.history(run.correlationId);
+      const latestProgress = currentHistory.findLast(
+        (event): event is JobProgressEvent => event.kind === 'progress',
       );
+      if (
+        !latestProgress ||
+        latestProgress.filesDone !== run.filesDone ||
+        latestProgress.filesTotal !== run.filesTotal
+      ) {
+        send({
+          kind: 'progress',
+          correlationId: run.correlationId,
+          filesDone: run.filesDone,
+          filesTotal: run.filesTotal,
+          timestamp: run.startedAt ?? Date.now(),
+        });
+      }
+      if (
+        isTerminalJobRunStatus(run.status) &&
+        !currentHistory.some((event) => event.kind === 'done')
+      ) {
+        send({
+          kind: 'done',
+          correlationId: run.correlationId,
+          status: run.status,
+          error: run.error,
+          timestamp: run.finishedAt ?? Date.now(),
+        });
+      }
     },
   });
 

@@ -61,6 +61,7 @@ export function createClaudeIngestHandler(
       const filePaths = await discoverSessionFiles(settings.logSources.claude);
       const resolvedProjects = new Map<string, ResolvedProject>();
       context.progress({ filesTotal: filePaths.length, filesDone: 0 });
+      context.log(`Found ${filePaths.length} Claude session files`);
 
       for (const [index, filePath] of filePaths.entries()) {
         context.progress({
@@ -68,6 +69,7 @@ export function createClaudeIngestHandler(
           filesDone: index,
           currentFile: filePath,
         });
+        context.log(`Reading ${filePath}`);
         const stableSessionId = basename(filePath, '.jsonl');
         const snapshot = await readStableSourceFile(filePath);
         const subagentSnapshots = await Promise.all(
@@ -104,6 +106,7 @@ export function createClaudeIngestHandler(
           storedCheckpoint.fileMtime === snapshot.fileMtime;
         const hasSubagentFiles = subagentSnapshots.length > 0;
         if (metadataMatches && !hasSubagentFiles) {
+          context.log(`Skipped unchanged ${filePath}`);
           context.progress({
             filesTotal: filePaths.length,
             filesDone: index + 1,
@@ -181,6 +184,7 @@ export function createClaudeIngestHandler(
             fileMtime: snapshot.fileMtime,
           },
         );
+        context.log(`Ingested ${filePath}`);
         context.progress({
           filesTotal: filePaths.length,
           filesDone: index + 1,

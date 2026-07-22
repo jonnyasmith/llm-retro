@@ -1,8 +1,9 @@
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Database } from './connection';
-import { interactions, settings } from './schema';
+import type { JobIdentity } from '../jobs/types';
+import { interactions, jobRuns, settings } from './schema';
 import { deriveLocalBuckets } from './time-buckets';
 
 export type Harness = 'claude' | 'codex' | 'pi' | 'omp';
@@ -123,6 +124,21 @@ export function insertInteraction(
 
   if (!stored) throw new Error('Interaction insertion did not persist a row');
   return stored;
+}
+
+export function listJobRuns(
+  database: Database,
+  identity: JobIdentity,
+  limit = 50,
+) {
+  const scope = identity.scope ?? '';
+  return database
+    .select()
+    .from(jobRuns)
+    .where(and(eq(jobRuns.type, identity.type), eq(jobRuns.scope, scope)))
+    .orderBy(desc(jobRuns.id))
+    .limit(limit)
+    .all();
 }
 
 export function recomputeLocalBuckets(
