@@ -16,7 +16,7 @@ export interface JobLogEvent extends JobEventBase {
 
 export interface JobDoneEvent extends JobEventBase {
   kind: 'done';
-  status: 'succeeded' | 'failed';
+  status: 'succeeded' | 'failed' | 'interrupted';
   error: string | null;
 }
 

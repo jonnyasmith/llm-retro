@@ -11,6 +11,14 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   ...pluginSvelte.configs.recommended,
   {
+    files: ['**/*.svelte'],
+    languageOptions: {
+      parserOptions: {
+        parser: tseslint.parser,
+      },
+    },
+  },
+  {
     languageOptions: {
       globals: {
         ...globals.browser,

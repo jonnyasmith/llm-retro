@@ -7,6 +7,7 @@ type StubJobPayload = {
   harness: string;
   stableSessionId: string;
   filePath: string;
+  recordDelayMs?: number;
 };
 
 export function createStubJob(payload: StubJobPayload): Job<StubJobPayload> {
@@ -106,6 +107,11 @@ async function runStubJob(
     context.log(
       `Processed ${payload.filePath} through byte ${lastCompleteRecordByteOffset}`,
     );
+    if (payload.recordDelayMs) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, payload.recordDelayMs),
+      );
+    }
     recordEnd = contents.indexOf(10, lastCompleteRecordByteOffset);
   }
 
