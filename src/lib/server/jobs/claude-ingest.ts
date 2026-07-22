@@ -1,5 +1,6 @@
-import { open, readdir } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { mkdir, open, readdir, rename, rm, stat } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { basename, dirname, join, parse, relative, resolve } from 'node:path';
 import { and, eq } from 'drizzle-orm';
 import type { Database } from '../database/connection';
 import {
@@ -11,10 +12,10 @@ import {
 import { getSettings } from '../database/store';
 import { deriveLocalBuckets } from '../database/time-buckets';
 import {
-  claudeSessionHasSubagentFiles,
   findClaudeInteractionContextByteOffset,
   readClaudeSession,
   readClaudeSubTokenUpdates,
+  type ClaudeSourceContents,
   type ClaudeSubTokenUpdate,
   type NormalisedClaudeSession,
 } from './claude-adapter';
@@ -32,6 +33,8 @@ export {
   type ResolvedProject,
 } from './project-resolver';
 
+type ArchivedFileRename = (oldPath: string, newPath: string) => Promise<void>;
+
 export function createClaudeIngestJob(): Job<null> {
   return {
     identity: { type: 'ingest', scope: 'claude' },
@@ -40,13 +43,21 @@ export function createClaudeIngestJob(): Job<null> {
 }
 
 export function createClaudeIngestHandler(
-  options: { resolveProject?: CwdProjectResolver } = {},
+  options: {
+    resolveProject?: CwdProjectResolver;
+    renameArchivedFile?: ArchivedFileRename;
+  } = {},
 ): JobHandler<null> {
   const resolveProject = options.resolveProject ?? resolveGitProject;
+  const renameArchivedFile = options.renameArchivedFile ?? rename;
 
   return {
     async run(_payload, context) {
       const settings = getSettings(context.database);
+      const archiveRoot = resolveRawArchiveRoot(
+        settings.rawArchiveEnabled,
+        settings.rawArchivePath,
+      );
       const filePaths = await discoverSessionFiles(settings.logSources.claude);
       const resolvedProjects = new Map<string, ResolvedProject>();
       context.progress({ filesTotal: filePaths.length, filesDone: 0 });
@@ -58,7 +69,15 @@ export function createClaudeIngestHandler(
           currentFile: filePath,
         });
         const stableSessionId = basename(filePath, '.jsonl');
-        const snapshot = await readStablePrimaryFile(filePath);
+        const snapshot = await readStableSourceFile(filePath);
+        const subagentSnapshots = await Promise.all(
+          (await discoverSubagentFiles(filePath)).map(readStableSourceFile),
+        );
+        if (archiveRoot !== null) {
+          for (const source of [snapshot, ...subagentSnapshots]) {
+            await archiveSourceFile(archiveRoot, source, renameArchivedFile);
+          }
+        }
         const completeByteOffset = snapshot.contents.lastIndexOf(10) + 1;
         const storedCheckpoint = context.database
           .select()
@@ -83,7 +102,7 @@ export function createClaudeIngestHandler(
         const metadataMatches =
           storedCheckpoint?.fileSize === snapshot.fileSize &&
           storedCheckpoint.fileMtime === snapshot.fileMtime;
-        const hasSubagentFiles = await claudeSessionHasSubagentFiles(filePath);
+        const hasSubagentFiles = subagentSnapshots.length > 0;
         if (metadataMatches && !hasSubagentFiles) {
           context.progress({
             filesTotal: filePaths.length,
@@ -104,9 +123,10 @@ export function createClaudeIngestHandler(
         const primaryContents = snapshot.contents
           .subarray(startByteOffset, completeByteOffset)
           .toString('utf8');
+        const subagentFiles = subagentSnapshots.map(toSourceContents);
         let parsed =
           primaryContents.length > 0
-            ? await readClaudeSession(filePath, primaryContents)
+            ? readClaudeSession(filePath, primaryContents, subagentFiles)
             : null;
         if (
           parsed?.requiresInteractionContext === true &&
@@ -116,19 +136,21 @@ export function createClaudeIngestHandler(
             snapshot.contents,
             startByteOffset,
           );
-          parsed = await readClaudeSession(
+          parsed = readClaudeSession(
             filePath,
             snapshot.contents
               .subarray(contextByteOffset, completeByteOffset)
               .toString('utf8'),
+            subagentFiles,
           );
         }
         const subTokenUpdates = hasSubagentFiles
-          ? await readClaudeSubTokenUpdates(
+          ? readClaudeSubTokenUpdates(
               filePath,
               snapshot.contents
                 .subarray(0, completeByteOffset)
                 .toString('utf8'),
+              subagentFiles,
             )
           : [];
         const cwds = new Set(
@@ -168,7 +190,16 @@ export function createClaudeIngestHandler(
   };
 }
 
-async function readStablePrimaryFile(filePath: string) {
+interface SourceSnapshot {
+  filePath: string;
+  contents: Buffer;
+  fileSize: number;
+  fileMtime: number;
+  atime: Date;
+  mtime: Date;
+}
+
+async function readStableSourceFile(filePath: string): Promise<SourceSnapshot> {
   const fileHandle = await open(filePath, 'r');
   try {
     const before = await fileHandle.stat();
@@ -178,13 +209,106 @@ async function readStablePrimaryFile(filePath: string) {
       throw new Error(`File changed while it was being read: ${filePath}`);
     }
     return {
+      filePath,
       contents,
       fileSize: after.size,
       fileMtime: Math.trunc(after.mtimeMs),
+      atime: after.atime,
+      mtime: after.mtime,
     };
   } finally {
     await fileHandle.close();
   }
+}
+
+async function discoverSubagentFiles(sessionFilePath: string) {
+  const directoryPath = join(
+    dirname(sessionFilePath),
+    basename(sessionFilePath, '.jsonl'),
+    'subagents',
+  );
+  let entries;
+  try {
+    entries = await readdir(directoryPath, { withFileTypes: true });
+  } catch (cause) {
+    if (isMissingPath(cause)) return [];
+    throw cause;
+  }
+
+  return entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.jsonl'))
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .map((entry) => join(directoryPath, entry.name));
+}
+
+function resolveRawArchiveRoot(
+  enabled: boolean,
+  configuredPath: string | null,
+): string | null {
+  if (!enabled) return null;
+  if (configuredPath === null || configuredPath.trim().length === 0) {
+    throw new Error('Raw archive is enabled but no archive path is configured');
+  }
+  return resolve(configuredPath);
+}
+
+async function archiveSourceFile(
+  archiveRoot: string,
+  source: SourceSnapshot,
+  renameArchivedFile: ArchivedFileRename,
+): Promise<void> {
+  const destination = rawArchiveDestination(archiveRoot, source.filePath);
+  try {
+    const archived = await stat(destination);
+    if (
+      archived.size === source.fileSize &&
+      Math.abs(archived.mtimeMs - source.fileMtime) < 1
+    ) {
+      return;
+    }
+  } catch (cause) {
+    if (!isMissingPath(cause)) throw cause;
+  }
+
+  await mkdir(dirname(destination), { recursive: true });
+  const temporaryPath = join(
+    dirname(destination),
+    `.${basename(destination)}.${randomUUID()}.tmp`,
+  );
+  let temporaryHandle: Awaited<ReturnType<typeof open>> | undefined;
+  try {
+    temporaryHandle = await open(temporaryPath, 'wx');
+    await temporaryHandle.writeFile(source.contents);
+    await temporaryHandle.utimes(source.atime, source.mtime);
+    await temporaryHandle.sync();
+    await temporaryHandle.close();
+    temporaryHandle = undefined;
+    await renameArchivedFile(temporaryPath, destination);
+  } finally {
+    try {
+      await temporaryHandle?.close();
+    } finally {
+      await rm(temporaryPath, { force: true });
+    }
+  }
+}
+
+function rawArchiveDestination(archiveRoot: string, sourcePath: string) {
+  const absoluteSource = resolve(sourcePath);
+  const filesystemRoot = parse(absoluteSource).root;
+  return join(
+    archiveRoot,
+    'claude',
+    Buffer.from(filesystemRoot).toString('base64url'),
+    relative(filesystemRoot, absoluteSource),
+  );
+}
+
+function toSourceContents(snapshot: SourceSnapshot): ClaudeSourceContents {
+  return {
+    filePath: snapshot.filePath,
+    contents: snapshot.contents.toString('utf8'),
+  };
 }
 
 async function discoverSessionFiles(logSources: string[]): Promise<string[]> {

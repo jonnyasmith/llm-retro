@@ -1,6 +1,3 @@
-import { readdir, readFile } from 'node:fs/promises';
-import { basename, dirname, join } from 'node:path';
-
 interface ClaudeRecord {
   type?: unknown;
   uuid?: unknown;
@@ -57,6 +54,11 @@ export interface ClaudeSubTokenUpdate {
   subTokens: TokenBuckets;
 }
 
+export interface ClaudeSourceContents {
+  filePath: string;
+  contents: string;
+}
+
 const tokenSources = [
   ['input', 'input_tokens'],
   ['output', 'output_tokens'],
@@ -64,26 +66,25 @@ const tokenSources = [
   ['cacheWrite', 'cache_creation_input_tokens'],
 ] as const satisfies ReadonlyArray<readonly [keyof TokenBuckets, string]>;
 
-export async function readClaudeSession(
+export function readClaudeSession(
   filePath: string,
-  primaryContents?: string,
-): Promise<NormalisedClaudeSession> {
-  const records =
-    primaryContents === undefined
-      ? await readRecords(filePath)
-      : parseRecords(primaryContents, filePath);
+  primaryContents: string,
+  subagentFiles: ClaudeSourceContents[] = [],
+): NormalisedClaudeSession {
+  const records = parseRecords(primaryContents, filePath);
   const agentRecords = groupAgentRecords(records);
-  mergeAgentRecords(agentRecords, await readSubagentFiles(filePath));
+  mergeAgentRecords(agentRecords, parseSubagentFiles(subagentFiles));
   return normaliseSession(records, agentRecords, filePath);
 }
 
-export async function readClaudeSubTokenUpdates(
+export function readClaudeSubTokenUpdates(
   filePath: string,
   primaryContents: string,
-): Promise<ClaudeSubTokenUpdate[]> {
+  subagentFiles: ClaudeSourceContents[] = [],
+): ClaudeSubTokenUpdate[] {
   const records = parseRecords(primaryContents, filePath);
   const agentRecords = groupAgentRecords(records);
-  mergeAgentRecords(agentRecords, await readSubagentFiles(filePath));
+  mergeAgentRecords(agentRecords, parseSubagentFiles(subagentFiles));
   const pendingInteractions = collectPendingInteractions(records, filePath);
   const agentsByInteraction = attributeCompletedAgents(
     pendingInteractions,
@@ -98,12 +99,6 @@ export async function readClaudeSubTokenUpdates(
       ),
     ),
   }));
-}
-
-export async function claudeSessionHasSubagentFiles(
-  filePath: string,
-): Promise<boolean> {
-  return (await listSubagentFilePaths(filePath)).length > 0;
 }
 
 export function findClaudeInteractionContextByteOffset(
@@ -131,41 +126,15 @@ export function findClaudeInteractionContextByteOffset(
   return lastGenuinePromptStart;
 }
 
-async function readSubagentFiles(
-  sessionFilePath: string,
-): Promise<Map<string, ClaudeRecord[]>> {
+function parseSubagentFiles(
+  files: ClaudeSourceContents[],
+): Map<string, ClaudeRecord[]> {
   const grouped = new Map<string, ClaudeRecord[]>();
-  for (const filePath of await listSubagentFilePaths(sessionFilePath)) {
-    const records = await readRecords(filePath);
+  for (const { filePath, contents } of files) {
+    const records = parseRecords(contents, filePath);
     mergeAgentRecords(grouped, groupAgentRecords(records));
   }
   return grouped;
-}
-
-async function listSubagentFilePaths(
-  sessionFilePath: string,
-): Promise<string[]> {
-  const directoryPath = join(
-    dirname(sessionFilePath),
-    basename(sessionFilePath, '.jsonl'),
-    'subagents',
-  );
-  let entries;
-  try {
-    entries = await readdir(directoryPath, { withFileTypes: true });
-  } catch (cause) {
-    if (isMissingPath(cause)) return [];
-    throw cause;
-  }
-
-  const filePaths: string[] = [];
-  for (const entry of entries.sort((left, right) =>
-    left.name.localeCompare(right.name),
-  )) {
-    if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue;
-    filePaths.push(join(directoryPath, entry.name));
-  }
-  return filePaths;
 }
 
 function mergeAgentRecords(
@@ -194,11 +163,6 @@ function groupAgentRecords(
   return grouped;
 }
 
-async function readRecords(filePath: string): Promise<ClaudeRecord[]> {
-  const contents = await readFile(filePath, 'utf8');
-  return parseRecords(contents, filePath);
-}
-
 function parseRecords(
   contents: string,
   filePath: string,
@@ -217,15 +181,6 @@ function parseRecords(
         );
       }
     });
-}
-
-function isMissingPath(cause: unknown): boolean {
-  return (
-    typeof cause === 'object' &&
-    cause !== null &&
-    'code' in cause &&
-    cause.code === 'ENOENT'
-  );
 }
 
 function normaliseSession(
