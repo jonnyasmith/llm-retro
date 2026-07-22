@@ -4,6 +4,7 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
+import * as schema from './schema';
 
 const DATA_DIRECTORY_ENVIRONMENT_VARIABLE = 'LLM_RETRO_DATA_DIR';
 
@@ -31,15 +32,16 @@ export function resolveDataDirectory(
   );
 }
 
-export function openDatabase() {
-  const dataDirectory = resolveDataDirectory();
+export function openDatabase(environment: NodeJS.ProcessEnv = process.env) {
+  const dataDirectory = resolveDataDirectory(environment);
   mkdirSync(dataDirectory, { recursive: true });
 
   const databasePath = join(dataDirectory, 'llm-retro.sqlite3');
   const sqlite = new Sqlite(databasePath);
+  sqlite.pragma('foreign_keys = ON');
   sqlite.pragma('journal_mode = WAL');
 
-  const database = drizzle(sqlite);
+  const database = drizzle(sqlite, { schema });
   migrate(database, { migrationsFolder: resolve('drizzle') });
 
   return { database, databasePath, sqlite };
