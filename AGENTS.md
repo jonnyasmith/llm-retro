@@ -6,7 +6,6 @@
 
 - Working on the store of record — schema, migrations, seed data → db/AGENTS.md
 - Working on the web app or any UI/frontend change → web/AGENTS.md
-- Working on the backend service — HTTP endpoints, business logic → api/AGENTS.md
 
 ### This context
 
