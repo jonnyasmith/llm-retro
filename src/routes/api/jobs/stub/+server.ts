@@ -1,6 +1,7 @@
 import { bootstrap } from '$lib/server/bootstrap';
 import { createStubJob } from '$lib/server/jobs/stub-job';
 import { error, json } from '@sveltejs/kit';
+import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { RequestHandler } from './$types';
@@ -45,7 +46,7 @@ export const POST: RequestHandler = async ({ request }) => {
   const correlationId = bootstrap.dispatcher.dispatch(
     createStubJob({
       harness: 'stub',
-      stableSessionId: 'browser-demo',
+      stableSessionId: `browser-demo:${randomUUID()}`,
       filePath: fixturePath,
       recordDelayMs: 120,
     }),

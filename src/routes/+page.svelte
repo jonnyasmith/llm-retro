@@ -20,6 +20,7 @@
   });
   let logs = $state<string[]>([]);
   let outcome = $state<Done | null>(null);
+  let lastFile = $state<string | null>(null);
   let connectionState = $state<'idle' | 'connecting' | 'live' | 'reconnecting'>(
     'idle',
   );
@@ -32,6 +33,7 @@
       ? 0
       : Math.round((progress.files_done / progress.files_total) * 100),
   );
+  const isRunning = $derived(correlationId !== null && outcome === null);
 
   function watch(id: string) {
     stream?.close();
@@ -45,6 +47,7 @@
     });
     stream.addEventListener('progress', (event) => {
       const nextProgress = JSON.parse(event.data) as Progress;
+      if (nextProgress.current_file) lastFile = nextProgress.current_file;
       if (
         nextProgress.files_total !== progress.files_total ||
         nextProgress.files_done >= progress.files_done
@@ -71,6 +74,7 @@
     isTriggering = true;
     triggerError = null;
     logs = [];
+    lastFile = null;
     progress = { files_done: 0, files_total: 0, current_file: null };
     try {
       const response = await fetch('/api/jobs/stub', {
@@ -122,8 +126,12 @@
         <p class="eyebrow">Foundation runner</p>
         <h2 id="stub-job-heading">Stub Job</h2>
       </div>
-      <button onclick={trigger} disabled={isTriggering}>
-        {isTriggering ? 'Starting…' : 'Start stub Job'}
+      <button onclick={trigger} disabled={isTriggering || isRunning}>
+        {isTriggering
+          ? 'Starting…'
+          : isRunning
+            ? 'Job running…'
+            : 'Start stub Job'}
       </button>
     </div>
 
@@ -151,8 +159,10 @@
         >{percentage}%</progress
       >
       <p class="current-file">
-        <span>Current file</span>
-        {progress.current_file ?? 'Waiting for progress…'}
+        <span>{outcome ? 'Last file' : 'Current file'}</span>
+        {progress.current_file ??
+          lastFile ??
+          (outcome ? 'No file processed' : 'Waiting for progress…')}
       </p>
 
       <div class="terminal" aria-live="polite">
