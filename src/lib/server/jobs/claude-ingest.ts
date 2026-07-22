@@ -5,14 +5,19 @@ import type { Database } from '../database/connection';
 import { interactions, projects, sessions } from '../database/schema';
 import { getSettings } from '../database/store';
 import { deriveLocalBuckets } from '../database/time-buckets';
+import {
+  resolveGitProject,
+  type CwdProjectResolver,
+  type ResolvedProject,
+} from './project-resolver';
 import type { Job, JobHandler } from './types';
 
-export interface ResolvedProject {
-  rootPath: string;
-  gitRemoteUrl: string | null;
-}
-
-export type CwdProjectResolver = (cwd: string) => Promise<ResolvedProject>;
+export {
+  literalCwdProjectResolver,
+  resolveGitProject,
+  type CwdProjectResolver,
+  type ResolvedProject,
+} from './project-resolver';
 
 interface ClaudeRecord {
   type?: unknown;
@@ -71,12 +76,6 @@ const tokenColumns = [
   ['cache_creation_input_tokens', 'mainCacheWriteTokens'],
 ] as const satisfies ReadonlyArray<readonly [string, MainTokenColumn]>;
 
-export async function literalCwdProjectResolver(
-  cwd: string,
-): Promise<ResolvedProject> {
-  return { rootPath: cwd, gitRemoteUrl: null };
-}
-
 export function createClaudeIngestJob(): Job<null> {
   return {
     identity: { type: 'ingest', scope: 'claude' },
@@ -87,7 +86,7 @@ export function createClaudeIngestJob(): Job<null> {
 export function createClaudeIngestHandler(
   options: { resolveProject?: CwdProjectResolver } = {},
 ): JobHandler<null> {
-  const resolveProject = options.resolveProject ?? literalCwdProjectResolver;
+  const resolveProject = options.resolveProject ?? resolveGitProject;
 
   return {
     async run(_payload, context) {
@@ -377,7 +376,10 @@ function storeSession(
       transaction
         .insert(projects)
         .values(resolved)
-        .onConflictDoNothing({ target: projects.rootPath })
+        .onConflictDoUpdate({
+          target: projects.rootPath,
+          set: { gitRemoteUrl: resolved.gitRemoteUrl },
+        })
         .run();
       const project = transaction
         .select({ id: projects.id })

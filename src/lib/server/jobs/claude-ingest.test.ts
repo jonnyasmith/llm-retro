@@ -1,6 +1,8 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { openDatabase } from '../database/connection';
@@ -13,6 +15,7 @@ import {
 } from './claude-ingest';
 
 const temporaryDirectories: string[] = [];
+const execFileAsync = promisify(execFile);
 
 async function createFixture() {
   const root = await mkdtemp(join(tmpdir(), 'llm-retro-claude-ingest-'));
@@ -34,6 +37,26 @@ async function writeJsonLines(path: string, records: unknown[]) {
     path,
     `${records.map((record) => JSON.stringify(record)).join('\n')}\n`,
   );
+}
+
+async function initialiseGitProject(path: string, remote?: string) {
+  await mkdir(path, { recursive: true });
+  await execFileAsync('git', ['init', path]);
+  await execFileAsync('git', [
+    '-C',
+    path,
+    '-c',
+    'user.name=LLM Retro Tests',
+    '-c',
+    'user.email=tests@llm-retro.invalid',
+    'commit',
+    '--allow-empty',
+    '-m',
+    'Initial commit',
+  ]);
+  if (remote) {
+    await execFileAsync('git', ['-C', path, 'remote', 'add', 'origin', remote]);
+  }
 }
 
 afterEach(async () => {
@@ -329,5 +352,89 @@ describe('Claude ingest Job handler', () => {
       rootPath: '/deleted/project',
       gitRemoteUrl: null,
     });
+  });
+
+  it('uses the real resolver for Session and Interaction opening cwds', async () => {
+    const fixture = await createFixture();
+    const sessionProjectRoot = join(fixture.logSource, 'session-project');
+    const interactionProjectRoot = join(
+      fixture.logSource,
+      'interaction-project',
+    );
+    const sessionCwd = join(sessionProjectRoot, 'session-subdirectory');
+    const interactionCwd = join(
+      interactionProjectRoot,
+      'interaction-subdirectory',
+    );
+    const remote = 'git@example.com:owner/interaction.git';
+    await initialiseGitProject(sessionProjectRoot);
+    await initialiseGitProject(interactionProjectRoot, remote);
+    await mkdir(sessionCwd, { recursive: true });
+    await mkdir(interactionCwd, { recursive: true });
+    const resolvedSessionProjectRoot = await realpath(sessionProjectRoot);
+    const resolvedInteractionProjectRoot = await realpath(
+      interactionProjectRoot,
+    );
+    fixture.database
+      .insert(projects)
+      .values({ rootPath: resolvedInteractionProjectRoot, gitRemoteUrl: null })
+      .run();
+    const sessionId = '33333333-3333-4333-8333-333333333333';
+    await writeJsonLines(join(fixture.projectDirectory, `${sessionId}.jsonl`), [
+      {
+        type: 'system',
+        cwd: sessionCwd,
+        timestamp: '2025-02-01T10:00:00.000Z',
+      },
+      {
+        type: 'user',
+        uuid: 'cross-project-prompt',
+        cwd: interactionCwd,
+        timestamp: '2025-02-01T10:01:00.000Z',
+        message: { content: 'Work elsewhere' },
+      },
+      {
+        type: 'assistant',
+        timestamp: '2025-02-01T10:01:01.000Z',
+        message: {
+          model: 'claude-sonnet-4-6-20260217',
+          usage: { output_tokens: 1 },
+        },
+      },
+    ]);
+
+    try {
+      await createClaudeIngestHandler().run(null, {
+        correlationId: 'correlation-real-resolver',
+        database: fixture.database,
+        progress: vi.fn(),
+        log: vi.fn(),
+      });
+
+      const storedProjects = fixture.database.select().from(projects).all();
+      const sessionProject = storedProjects.find(
+        (project) => project.rootPath === resolvedSessionProjectRoot,
+      );
+      const interactionProject = storedProjects.find(
+        (project) => project.rootPath === resolvedInteractionProjectRoot,
+      );
+      const storedSession = fixture.database
+        .select()
+        .from(sessions)
+        .where(eq(sessions.stableSessionId, sessionId))
+        .get();
+      const storedInteraction = fixture.database
+        .select()
+        .from(interactions)
+        .where(eq(interactions.openingUserRecordId, 'cross-project-prompt'))
+        .get();
+
+      expect(sessionProject).toMatchObject({ gitRemoteUrl: null });
+      expect(interactionProject).toMatchObject({ gitRemoteUrl: remote });
+      expect(storedSession?.projectId).toBe(sessionProject?.id);
+      expect(storedInteraction?.projectId).toBe(interactionProject?.id);
+    } finally {
+      fixture.sqlite.close();
+    }
   });
 });
