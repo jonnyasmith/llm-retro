@@ -1,0 +1,41 @@
+{
+  "name": "llm-retro",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "start": "node build",
+    "preview": "vite preview",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "lint": "prettier --check .prettierrc package.json '*.config.*' tsconfig.json 'src/**/*.{ts,svelte,html}' 'drizzle/**/*.json' && eslint .",
+    "format": "prettier --write .prettierrc package.json '*.config.*' tsconfig.json 'src/**/*.{ts,svelte,html}' 'drizzle/**/*.json'",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@sveltejs/adapter-node": "5.5.7",
+    "@sveltejs/kit": "2.70.1",
+    "better-sqlite3": "13.0.1",
+    "drizzle-orm": "0.45.2",
+    "svelte": "5.56.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/better-sqlite3": "7.6.13",
+    "drizzle-kit": "0.31.10",
+    "eslint": "10.7.0",
+    "eslint-plugin-svelte": "3.22.0",
+    "globals": "17.7.0",
+    "prettier": "3.9.6",
+    "prettier-plugin-svelte": "4.1.1",
+    "svelte-check": "4.7.3",
+    "typescript": "6.0.2",
+    "typescript-eslint": "8.65.0",
+    "vite": "8.1.5",
+    "vitest": "4.1.0"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}
