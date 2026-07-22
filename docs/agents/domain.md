@@ -17,7 +17,7 @@ One user prompt together with all model and tool activity it triggers, up to the
 _Avoid_: Turn, message, request, exchange, prompt.
 
 **Model**:
-The specific LLM that served an Interaction, named as the Harness reports it (e.g. `claude-opus-4-8`, `gpt-5.1-codex-max`). The "which models I reach for" dimension. Its provider (anthropic, openai, …) is a derived attribute, not the identity.
+The specific LLM that served an Interaction, canonicalised to one identity (e.g. `claude-opus-4-8`, `gpt-5.1-codex-max`) so the same model aggregates across Harnesses, with the verbatim string the Harness reported retained alongside as provenance. The "which models I reach for" dimension. Its provider (anthropic, openai, …) is a derived attribute, not the identity.
 _Avoid_: LLM, engine, model family.
 
 **Token usage**:
@@ -29,8 +29,16 @@ A git repository that work is attributed to — the first-class "what I was work
 _Avoid_: Repo, folder, directory, workspace, cwd.
 
 **Ingestion**:
-The process of reading new records from the Harnesses' log files and turning them into stored Interactions. Runs as a user-triggered background job from the app's Jobs screen — not a daemon and not automatic — and is safe to re-run.
+The process of reading new records from the Harnesses' log files and turning them into stored Interactions. One *kind* of Job — user-triggered from the app's Jobs screen, not a daemon and not automatic — and safe to re-run.
 _Avoid_: Import, sync, parse, scan, indexing.
+
+**Job**:
+A unit of background work the app runs, identified by a type plus an optional scope (e.g. Ingestion of a single Harness, or a later analysis task). The runner runs Jobs of different identities concurrently but refuses a second Job of an identity already running. Ingestion is the first Job type; the concept is deliberately broader so future work (e.g. machine-learning over the stored data) is a new Job type, not a new mechanism.
+_Avoid_: Task, worker, process, cron.
+
+**Job run**:
+A single execution of a Job — the persisted record of one attempt, carrying its status through its lifecycle, its timing and outcome, and a correlation id that both tags its logs and names the stream a user watches its progress on. The history of Job runs is what the Jobs screen shows; a run left mid-flight by a crashed process is reconciled to interrupted and the user re-triggers it.
+_Avoid_: Task, invocation, execution, session.
 
 **Checkpoint**:
 The record of how far Ingestion has consumed each log file, so a re-run or a restart after failure resumes from where it stopped and never reprocesses an already-ingested record.

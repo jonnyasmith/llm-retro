@@ -10,7 +10,7 @@
 
 - **S1. App skeleton** — SvelteKit + SQLite + TS scaffold; one process serves UI + API; local run. Needs: nothing.
 - **S2. Store schema** — Interaction / Session / Project / Checkpoint tables; token buckets nullable; Interaction idempotency key; local-time bucketing helpers. Needs: S1, ADR-0001/0002/0003.
-- **S3. Job runner** — in-process background job with checkpointing + restart; foundation for the Jobs screen. Needs: S2.
+- **S3. Job runner** — multi-job dispatcher keyed per identity (type + scope), each run persisted with checkpointing, restart-reconciliation, and live SSE progress; worker-thread seam for later CPU-bound jobs; proven against a stub job. Foundation for the Jobs screen. Needs: S2. Full spec: `.scratch/skeleton-store-foundation/spec.md`.
 
 ## Milestone 2 — First Harness end-to-end (proves the model)
 
