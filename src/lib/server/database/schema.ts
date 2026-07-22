@@ -1,11 +1,13 @@
 import { sql } from 'drizzle-orm';
 import {
   check,
+  index,
   integer,
   primaryKey,
   sqliteTable,
   text,
   unique,
+  uniqueIndex,
 } from 'drizzle-orm/sqlite-core';
 
 export const projects = sqliteTable('project', {
@@ -88,6 +90,64 @@ export const checkpoints = sqliteTable(
       sql`${table.lastCompleteRecordByteOffset} >= 0`,
     ),
     check('checkpoint_file_size_nonnegative', sql`${table.fileSize} >= 0`),
+  ],
+);
+
+export const jobRunStatuses = [
+  'pending',
+  'running',
+  'succeeded',
+  'failed',
+  'interrupted',
+] as const;
+
+export type JobRunStatus = (typeof jobRunStatuses)[number];
+
+export const jobRuns = sqliteTable(
+  'job_run',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    type: text('type').notNull(),
+    scope: text('scope').notNull().default(''),
+    correlationId: text('correlation_id').notNull().unique(),
+    status: text('status').$type<JobRunStatus>().notNull(),
+    startedAt: integer('started_at'),
+    finishedAt: integer('finished_at'),
+    error: text('error'),
+    filesTotal: integer('files_total').notNull().default(0),
+    filesDone: integer('files_done').notNull().default(0),
+  },
+  (table) => [
+    check('job_run_type_nonempty', sql`length(${table.type}) > 0`),
+    check(
+      'job_run_status_valid',
+      sql`${table.status} in ('pending', 'running', 'succeeded', 'failed', 'interrupted')`,
+    ),
+    check(
+      'job_run_progress_valid',
+      sql`${table.filesTotal} >= 0 and ${table.filesDone} >= 0 and ${table.filesDone} <= ${table.filesTotal}`,
+    ),
+    check(
+      'job_run_timing_valid',
+      sql`(${table.startedAt} is null or ${table.startedAt} >= 0) and (${table.finishedAt} is null or (${table.startedAt} is not null and ${table.finishedAt} >= ${table.startedAt}))`,
+    ),
+    check(
+      'job_run_lifecycle_valid',
+      sql`(
+        (${table.status} = 'pending' and ${table.startedAt} is null and ${table.finishedAt} is null and ${table.error} is null)
+        or (${table.status} = 'running' and ${table.startedAt} is not null and ${table.finishedAt} is null and ${table.error} is null)
+        or (${table.status} in ('succeeded', 'interrupted') and ${table.startedAt} is not null and ${table.finishedAt} is not null and ${table.error} is null)
+        or (${table.status} = 'failed' and ${table.startedAt} is not null and ${table.finishedAt} is not null and ${table.error} is not null)
+      )`,
+    ),
+    index('job_run_identity_status_index').on(
+      table.type,
+      table.scope,
+      table.status,
+    ),
+    uniqueIndex('job_run_running_identity_unique')
+      .on(table.type, table.scope)
+      .where(sql`${table.status} = 'running'`),
   ],
 );
 

@@ -2,6 +2,6 @@ import { openDatabase } from './database/connection';
 import { initialiseRuntime } from './runtime';
 
 const connection = openDatabase();
-initialiseRuntime(connection.database);
+const runtime = initialiseRuntime(connection.database);
 
-export const bootstrap = connection;
+export const bootstrap = { ...connection, ...runtime };
