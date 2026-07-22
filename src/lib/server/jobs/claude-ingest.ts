@@ -1,12 +1,21 @@
-import { readdir } from 'node:fs/promises';
+import { open, readdir } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { and, eq } from 'drizzle-orm';
 import type { Database } from '../database/connection';
-import { interactions, projects, sessions } from '../database/schema';
+import {
+  checkpoints,
+  interactions,
+  projects,
+  sessions,
+} from '../database/schema';
 import { getSettings } from '../database/store';
 import { deriveLocalBuckets } from '../database/time-buckets';
 import {
+  claudeSessionHasSubagentFiles,
+  findClaudeInteractionContextByteOffset,
   readClaudeSession,
+  readClaudeSubTokenUpdates,
+  type ClaudeSubTokenUpdate,
   type NormalisedClaudeSession,
 } from './claude-adapter';
 import {
@@ -48,11 +57,86 @@ export function createClaudeIngestHandler(
           filesDone: index,
           currentFile: filePath,
         });
-        const parsed = await readClaudeSession(filePath);
-        const cwds = new Set([
-          parsed.cwd,
-          ...parsed.interactions.map((interaction) => interaction.cwd),
-        ]);
+        const stableSessionId = basename(filePath, '.jsonl');
+        const snapshot = await readStablePrimaryFile(filePath);
+        const completeByteOffset = snapshot.contents.lastIndexOf(10) + 1;
+        const storedCheckpoint = context.database
+          .select()
+          .from(checkpoints)
+          .where(
+            and(
+              eq(checkpoints.harness, 'claude'),
+              eq(checkpoints.stableSessionId, stableSessionId),
+            ),
+          )
+          .get();
+        const existingSession = context.database
+          .select()
+          .from(sessions)
+          .where(
+            and(
+              eq(sessions.harness, 'claude'),
+              eq(sessions.stableSessionId, stableSessionId),
+            ),
+          )
+          .get();
+        const metadataMatches =
+          storedCheckpoint?.fileSize === snapshot.fileSize &&
+          storedCheckpoint.fileMtime === snapshot.fileMtime;
+        const hasSubagentFiles = await claudeSessionHasSubagentFiles(filePath);
+        if (metadataMatches && !hasSubagentFiles) {
+          context.progress({
+            filesTotal: filePaths.length,
+            filesDone: index + 1,
+          });
+          continue;
+        }
+
+        const canResumeGrowth =
+          storedCheckpoint !== undefined &&
+          snapshot.fileSize > storedCheckpoint.fileSize &&
+          storedCheckpoint.lastCompleteRecordByteOffset <= completeByteOffset;
+        const startByteOffset = metadataMatches
+          ? completeByteOffset
+          : canResumeGrowth
+            ? storedCheckpoint.lastCompleteRecordByteOffset
+            : 0;
+        const primaryContents = snapshot.contents
+          .subarray(startByteOffset, completeByteOffset)
+          .toString('utf8');
+        let parsed =
+          primaryContents.length > 0
+            ? await readClaudeSession(filePath, primaryContents)
+            : null;
+        if (
+          parsed?.requiresInteractionContext === true &&
+          startByteOffset > 0
+        ) {
+          const contextByteOffset = findClaudeInteractionContextByteOffset(
+            snapshot.contents,
+            startByteOffset,
+          );
+          parsed = await readClaudeSession(
+            filePath,
+            snapshot.contents
+              .subarray(contextByteOffset, completeByteOffset)
+              .toString('utf8'),
+          );
+        }
+        const subTokenUpdates = hasSubagentFiles
+          ? await readClaudeSubTokenUpdates(
+              filePath,
+              snapshot.contents
+                .subarray(0, completeByteOffset)
+                .toString('utf8'),
+            )
+          : [];
+        const cwds = new Set(
+          parsed?.interactions.map((interaction) => interaction.cwd) ?? [],
+        );
+        if ((!existingSession || startByteOffset === 0) && parsed?.cwd) {
+          cwds.add(parsed.cwd);
+        }
         for (const cwd of cwds) {
           if (!resolvedProjects.has(cwd)) {
             resolvedProjects.set(cwd, await resolveProject(cwd));
@@ -61,11 +145,19 @@ export function createClaudeIngestHandler(
 
         storeSession(
           context.database,
-          basename(filePath, '.jsonl'),
+          stableSessionId,
           filePath,
           parsed,
+          subTokenUpdates,
           resolvedProjects,
           settings.timezone,
+          existingSession,
+          startByteOffset > 0,
+          {
+            lastCompleteRecordByteOffset: completeByteOffset,
+            fileSize: snapshot.fileSize,
+            fileMtime: snapshot.fileMtime,
+          },
         );
         context.progress({
           filesTotal: filePaths.length,
@@ -74,6 +166,25 @@ export function createClaudeIngestHandler(
       }
     },
   };
+}
+
+async function readStablePrimaryFile(filePath: string) {
+  const fileHandle = await open(filePath, 'r');
+  try {
+    const before = await fileHandle.stat();
+    const contents = await fileHandle.readFile();
+    const after = await fileHandle.stat();
+    if (before.size !== after.size || before.mtimeMs !== after.mtimeMs) {
+      throw new Error(`File changed while it was being read: ${filePath}`);
+    }
+    return {
+      contents,
+      fileSize: after.size,
+      fileMtime: Math.trunc(after.mtimeMs),
+    };
+  } finally {
+    await fileHandle.close();
+  }
 }
 
 async function discoverSessionFiles(logSources: string[]): Promise<string[]> {
@@ -116,16 +227,27 @@ function storeSession(
   database: Database,
   stableSessionId: string,
   logFilePath: string,
-  parsed: NormalisedClaudeSession,
+  parsed: NormalisedClaudeSession | null,
+  subTokenUpdates: ClaudeSubTokenUpdate[],
   resolvedProjects: Map<string, ResolvedProject>,
   timezone: string,
+  existingSession: typeof sessions.$inferSelect | undefined,
+  resumingPrimary: boolean,
+  checkpoint: {
+    lastCompleteRecordByteOffset: number;
+    fileSize: number;
+    fileMtime: number;
+  },
 ): void {
   database.transaction((transaction) => {
     const projectIds = new Map<string, number>();
-    for (const cwd of new Set([
-      parsed.cwd,
-      ...parsed.interactions.map((interaction) => interaction.cwd),
-    ])) {
+    const sessionCwds = new Set(
+      parsed?.interactions.map((interaction) => interaction.cwd) ?? [],
+    );
+    if ((!existingSession || !resumingPrimary) && parsed?.cwd) {
+      sessionCwds.add(parsed.cwd);
+    }
+    for (const cwd of sessionCwds) {
       const resolved = resolvedProjects.get(cwd);
       if (!resolved)
         throw new Error(`Project was not resolved for cwd: ${cwd}`);
@@ -147,30 +269,38 @@ function storeSession(
       projectIds.set(cwd, project.id);
     }
 
-    const sessionProjectId = projectIds.get(parsed.cwd);
-    if (sessionProjectId === undefined) {
-      throw new Error(`Session Project was not stored: ${parsed.cwd}`);
-    }
-    transaction
-      .insert(sessions)
-      .values({
-        harness: 'claude',
-        stableSessionId,
-        projectId: sessionProjectId,
-        logFilePath,
-        startedAt: parsed.startedAt,
-        endedAt: parsed.endedAt,
-      })
-      .onConflictDoUpdate({
-        target: [sessions.harness, sessions.stableSessionId],
-        set: {
+    if (parsed) {
+      const sessionProjectId =
+        resumingPrimary && existingSession
+          ? existingSession.projectId
+          : parsed.cwd === null
+            ? undefined
+            : projectIds.get(parsed.cwd);
+      if (sessionProjectId === undefined) {
+        throw new Error(`Session Project was not stored: ${parsed.cwd}`);
+      }
+      const startedAt = resumingPrimary
+        ? minimumTimestamp(existingSession?.startedAt ?? null, parsed.startedAt)
+        : parsed.startedAt;
+      const endedAt = resumingPrimary
+        ? maximumTimestamp(existingSession?.endedAt ?? null, parsed.endedAt)
+        : parsed.endedAt;
+      transaction
+        .insert(sessions)
+        .values({
+          harness: 'claude',
+          stableSessionId,
           projectId: sessionProjectId,
           logFilePath,
-          startedAt: parsed.startedAt,
-          endedAt: parsed.endedAt,
-        },
-      })
-      .run();
+          startedAt,
+          endedAt,
+        })
+        .onConflictDoUpdate({
+          target: [sessions.harness, sessions.stableSessionId],
+          set: { projectId: sessionProjectId, logFilePath, startedAt, endedAt },
+        })
+        .run();
+    }
     const session = transaction
       .select({ id: sessions.id })
       .from(sessions)
@@ -181,10 +311,20 @@ function storeSession(
         ),
       )
       .get();
-    if (!session)
+    if (!session && (parsed || subTokenUpdates.length > 0)) {
       throw new Error(`Claude Session was not stored: ${stableSessionId}`);
+    }
+    if (session && !resumingPrimary) {
+      transaction
+        .delete(interactions)
+        .where(eq(interactions.sessionId, session.id))
+        .run();
+    }
 
-    for (const interaction of parsed.interactions) {
+    for (const interaction of parsed?.interactions ?? []) {
+      if (!session) {
+        throw new Error(`Claude Session was not stored: ${stableSessionId}`);
+      }
       const projectId = projectIds.get(interaction.cwd);
       if (projectId === undefined) {
         throw new Error(
@@ -220,5 +360,46 @@ function storeSession(
         })
         .run();
     }
+
+    if (session) {
+      for (const update of subTokenUpdates) {
+        transaction
+          .update(interactions)
+          .set({
+            subInputTokens: update.subTokens.input,
+            subOutputTokens: update.subTokens.output,
+            subCacheReadTokens: update.subTokens.cacheRead,
+            subCacheWriteTokens: update.subTokens.cacheWrite,
+          })
+          .where(
+            and(
+              eq(interactions.sessionId, session.id),
+              eq(interactions.openingUserRecordId, update.openingUserRecordId),
+            ),
+          )
+          .run();
+      }
+    }
+
+    transaction
+      .insert(checkpoints)
+      .values({ harness: 'claude', stableSessionId, ...checkpoint })
+      .onConflictDoUpdate({
+        target: [checkpoints.harness, checkpoints.stableSessionId],
+        set: checkpoint,
+      })
+      .run();
   });
+}
+
+function minimumTimestamp(left: number | null, right: number | null) {
+  if (left === null) return right;
+  if (right === null) return left;
+  return Math.min(left, right);
+}
+
+function maximumTimestamp(left: number | null, right: number | null) {
+  if (left === null) return right;
+  if (right === null) return left;
+  return Math.max(left, right);
 }

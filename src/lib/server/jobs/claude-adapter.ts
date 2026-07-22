@@ -45,10 +45,16 @@ export interface NormalisedClaudeInteraction {
 }
 
 export interface NormalisedClaudeSession {
-  cwd: string;
+  cwd: string | null;
   startedAt: number | null;
   endedAt: number | null;
   interactions: NormalisedClaudeInteraction[];
+  requiresInteractionContext: boolean;
+}
+
+export interface ClaudeSubTokenUpdate {
+  openingUserRecordId: string;
+  subTokens: TokenBuckets;
 }
 
 const tokenSources = [
@@ -60,16 +66,85 @@ const tokenSources = [
 
 export async function readClaudeSession(
   filePath: string,
+  primaryContents?: string,
 ): Promise<NormalisedClaudeSession> {
-  const records = await readRecords(filePath);
+  const records =
+    primaryContents === undefined
+      ? await readRecords(filePath)
+      : parseRecords(primaryContents, filePath);
   const agentRecords = groupAgentRecords(records);
   mergeAgentRecords(agentRecords, await readSubagentFiles(filePath));
   return normaliseSession(records, agentRecords, filePath);
 }
 
+export async function readClaudeSubTokenUpdates(
+  filePath: string,
+  primaryContents: string,
+): Promise<ClaudeSubTokenUpdate[]> {
+  const records = parseRecords(primaryContents, filePath);
+  const agentRecords = groupAgentRecords(records);
+  mergeAgentRecords(agentRecords, await readSubagentFiles(filePath));
+  const pendingInteractions = collectPendingInteractions(records, filePath);
+  const agentsByInteraction = attributeCompletedAgents(
+    pendingInteractions,
+    records,
+  );
+  return pendingInteractions.map((interaction) => ({
+    openingUserRecordId: interaction.openingUserRecordId,
+    subTokens: sumTokens(
+      collectSubagentAssistants(
+        agentsByInteraction.get(interaction) ?? [],
+        agentRecords,
+      ),
+    ),
+  }));
+}
+
+export async function claudeSessionHasSubagentFiles(
+  filePath: string,
+): Promise<boolean> {
+  return (await listSubagentFilePaths(filePath)).length > 0;
+}
+
+export function findClaudeInteractionContextByteOffset(
+  contents: Buffer,
+  beforeByteOffset: number,
+): number {
+  let lineStart = 0;
+  let lastGenuinePromptStart = 0;
+  let lineNumber = 1;
+  while (lineStart < beforeByteOffset) {
+    const newline = contents.indexOf(10, lineStart);
+    if (newline === -1 || newline >= beforeByteOffset) break;
+    const line = contents.subarray(lineStart, newline).toString('utf8');
+    if (line.length > 0) {
+      const [record] = parseRecords(
+        line,
+        '<Claude primary context>',
+        lineNumber,
+      );
+      if (isGenuineUserPrompt(record)) lastGenuinePromptStart = lineStart;
+    }
+    lineStart = newline + 1;
+    lineNumber += 1;
+  }
+  return lastGenuinePromptStart;
+}
+
 async function readSubagentFiles(
   sessionFilePath: string,
 ): Promise<Map<string, ClaudeRecord[]>> {
+  const grouped = new Map<string, ClaudeRecord[]>();
+  for (const filePath of await listSubagentFilePaths(sessionFilePath)) {
+    const records = await readRecords(filePath);
+    mergeAgentRecords(grouped, groupAgentRecords(records));
+  }
+  return grouped;
+}
+
+async function listSubagentFilePaths(
+  sessionFilePath: string,
+): Promise<string[]> {
   const directoryPath = join(
     dirname(sessionFilePath),
     basename(sessionFilePath, '.jsonl'),
@@ -79,19 +154,18 @@ async function readSubagentFiles(
   try {
     entries = await readdir(directoryPath, { withFileTypes: true });
   } catch (cause) {
-    if (isMissingPath(cause)) return new Map();
+    if (isMissingPath(cause)) return [];
     throw cause;
   }
 
-  const grouped = new Map<string, ClaudeRecord[]>();
+  const filePaths: string[] = [];
   for (const entry of entries.sort((left, right) =>
     left.name.localeCompare(right.name),
   )) {
     if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue;
-    const records = await readRecords(join(directoryPath, entry.name));
-    mergeAgentRecords(grouped, groupAgentRecords(records));
+    filePaths.push(join(directoryPath, entry.name));
   }
-  return grouped;
+  return filePaths;
 }
 
 function mergeAgentRecords(
@@ -122,6 +196,14 @@ function groupAgentRecords(
 
 async function readRecords(filePath: string): Promise<ClaudeRecord[]> {
   const contents = await readFile(filePath, 'utf8');
+  return parseRecords(contents, filePath);
+}
+
+function parseRecords(
+  contents: string,
+  filePath: string,
+  firstLineNumber = 1,
+): ClaudeRecord[] {
   return contents
     .split('\n')
     .filter((line) => line.length > 0)
@@ -130,7 +212,7 @@ async function readRecords(filePath: string): Promise<ClaudeRecord[]> {
         return JSON.parse(line) as ClaudeRecord;
       } catch (cause) {
         throw new SyntaxError(
-          `Invalid Claude JSONL at ${filePath}:${index + 1}`,
+          `Invalid Claude JSONL at ${filePath}:${firstLineNumber + index}`,
           { cause },
         );
       }
@@ -163,8 +245,44 @@ function normaliseSession(
     (record): record is ClaudeRecord & { cwd: string } =>
       typeof record.cwd === 'string' && record.cwd.length > 0,
   )?.cwd;
-  if (!cwd) throw new Error(`Claude Session has no recorded cwd: ${filePath}`);
+  const pendingInteractions = collectPendingInteractions(records, filePath);
+  const agentsByInteraction = attributeCompletedAgents(
+    pendingInteractions,
+    records,
+  );
+  const interactions = pendingInteractions.map((interaction) =>
+    normaliseInteraction(
+      interaction,
+      agentsByInteraction.get(interaction) ?? [],
+      agentRecords,
+      filePath,
+    ),
+  );
 
+  return {
+    cwd: cwd ?? null,
+    startedAt,
+    endedAt,
+    interactions,
+    requiresInteractionContext:
+      recordsBeforeFirstPromptAffectInteraction(records),
+  };
+}
+
+function recordsBeforeFirstPromptAffectInteraction(
+  records: ClaudeRecord[],
+): boolean {
+  for (const record of records) {
+    if (isGenuineUserPrompt(record)) return false;
+    if (record.type === 'assistant' || record.type === 'user') return true;
+  }
+  return false;
+}
+
+function collectPendingInteractions(
+  records: ClaudeRecord[],
+  filePath: string,
+): PendingInteraction[] {
   const pendingInteractions: PendingInteraction[] = [];
   let pending: PendingInteraction | null = null;
   for (const record of records) {
@@ -185,20 +303,7 @@ function normaliseSession(
     pendingInteractions.push(pending);
   }
 
-  const agentsByInteraction = attributeCompletedAgents(
-    pendingInteractions,
-    records,
-  );
-  const interactions = pendingInteractions.map((interaction) =>
-    normaliseInteraction(
-      interaction,
-      agentsByInteraction.get(interaction) ?? [],
-      agentRecords,
-      filePath,
-    ),
-  );
-
-  return { cwd, startedAt, endedAt, interactions };
+  return pendingInteractions;
 }
 
 function isGenuineUserPrompt(record: ClaudeRecord): boolean {
