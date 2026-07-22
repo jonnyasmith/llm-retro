@@ -2,11 +2,6 @@
 
 ## Routing — read only what the task needs, when it needs it
 
-### Working targets
-
-- Working on the store of record — schema, migrations, seed data → db/AGENTS.md
-- Working on the web app or any UI/frontend change → web/AGENTS.md
-
 ### This context
 
 - Solution-wide vocabulary → docs/agents/domain.md
