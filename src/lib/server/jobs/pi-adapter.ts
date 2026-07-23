@@ -1,4 +1,4 @@
-import type { TokenBuckets } from './claude-adapter';
+import type { TokenBuckets } from './ingest-pipeline';
 
 interface PiRecord {
   type?: unknown;

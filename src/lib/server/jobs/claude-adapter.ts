@@ -1,3 +1,5 @@
+import type { TokenBuckets } from './ingest-pipeline';
+
 interface ClaudeRecord {
   type?: unknown;
   uuid?: unknown;
@@ -22,13 +24,6 @@ interface PendingInteraction {
   timestamp: number;
   assistants: ClaudeRecord[];
   records: ClaudeRecord[];
-}
-
-export interface TokenBuckets {
-  input: number | null;
-  output: number | null;
-  cacheRead: number | null;
-  cacheWrite: number | null;
 }
 
 export interface NormalisedClaudeInteraction {
