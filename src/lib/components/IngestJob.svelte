@@ -3,12 +3,14 @@
   import { resolve } from '$app/paths';
   import { page } from '$app/state';
   import {
+    ingestHarnessLabels,
     isTerminalJobRunStatus,
     parseJobEventData,
     type JobDonePayload,
     type JobLogPayload,
     type JobProgressPayload,
     type JobRunSummary,
+    type IngestHarness,
   } from '$lib/jobs/contracts';
   import { onDestroy } from 'svelte';
 
@@ -17,11 +19,11 @@
     runs,
     activeCorrelationId,
   }: {
-    harness: 'claude' | 'pi';
+    harness: IngestHarness;
     runs: JobRunSummary[];
     activeCorrelationId: string | null;
   } = $props();
-  const harnessLabel = $derived(harness === 'claude' ? 'Claude' : 'pi');
+  const harnessLabel = $derived(ingestHarnessLabels[harness]);
   let correlationId = $state<string | null>(null);
   let progress = $state<JobProgressPayload>({
     correlation_id: '',

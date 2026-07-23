@@ -1,13 +1,20 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
   import {
+    ingestHarnessLabels,
     isTerminalJobRunStatus,
     type JobRunSummary,
+    type IngestHarness,
   } from '$lib/jobs/contracts';
 
-  let { harness, runs }: { harness: 'claude' | 'pi'; runs: JobRunSummary[] } =
-    $props();
-  const harnessLabel = $derived(harness === 'claude' ? 'Claude' : 'pi');
+  let {
+    harness,
+    runs,
+  }: {
+    harness: IngestHarness;
+    runs: JobRunSummary[];
+  } = $props();
+  const harnessLabel = $derived(ingestHarnessLabels[harness]);
 
   function formatTimestamp(timestamp: number | null): string {
     if (timestamp === null) return 'Not started';

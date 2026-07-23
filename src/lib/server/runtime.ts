@@ -1,5 +1,6 @@
 import type { Database } from './database/connection';
 import { createClaudeIngestHandler } from './jobs/claude-ingest';
+import { createCodexIngestHandler } from './jobs/codex-ingest';
 import { createPiIngestHandler } from './jobs/pi-ingest';
 import { JobDispatcher, reconcileInterruptedJobRuns } from './jobs/dispatcher';
 import { JobEventSource } from './jobs/events';
@@ -14,6 +15,10 @@ export function initialiseRuntime(database: Database) {
   jobBackend.register(
     { type: 'ingest', scope: 'claude' },
     createClaudeIngestHandler(),
+  );
+  jobBackend.register(
+    { type: 'ingest', scope: 'codex' },
+    createCodexIngestHandler(),
   );
   jobBackend.register({ type: 'ingest', scope: 'pi' }, createPiIngestHandler());
   const dispatcher = new JobDispatcher(database, jobEvents, {

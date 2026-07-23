@@ -6,6 +6,14 @@ export const jobRunStatuses = [
   'interrupted',
 ] as const;
 
+export const ingestHarnessLabels = {
+  claude: 'Claude',
+  codex: 'Codex',
+  pi: 'pi',
+} as const;
+
+export type IngestHarness = keyof typeof ingestHarnessLabels;
+
 export type JobRunStatus = (typeof jobRunStatuses)[number];
 export type TerminalJobRunStatus = Extract<
   JobRunStatus,
