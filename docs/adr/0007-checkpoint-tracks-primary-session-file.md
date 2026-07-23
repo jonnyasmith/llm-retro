@@ -2,7 +2,7 @@
 
 A Session is one Harness run, but on disk it is not always one file. Claude writes sub-agent activity to sibling `subagents/agent-<id>.jsonl` files alongside the main `<sessionId>.jsonl`, and omp nests sub-agent files too. Those sub-agent files carry tokens that fold into the spawning Interaction's main-vs-sub split (ADR-0001), so ingestion must read them — yet the `Checkpoint` is keyed one row per Session (`harness` + `stableSessionId`) with a single byte offset.
 
-We keep that shape: **the Checkpoint tracks the primary session file only.** Auxiliary files (sub-agent logs) are re-read in full on every ingest and de-duplicated by the Interaction idempotency key (`UNIQUE(sessionId, openingUserRecordId)`), which makes re-folding their tokens a no-op.
+We keep that shape: **the Checkpoint tracks the primary session file only.** Auxiliary files (sub-agent logs) are re-read in full on every ingest and de-duplicated by the Interaction idempotency key (`UNIQUE(sessionId, interaction_key)`), which makes re-folding their tokens a no-op.
 
 ## Considered options
 
