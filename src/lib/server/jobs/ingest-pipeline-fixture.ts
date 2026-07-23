@@ -1,0 +1,211 @@
+import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename, extname, join } from 'node:path';
+import { openDatabase, type Database } from '../database/connection';
+import { updateSettings, type Harness } from '../database/store';
+import {
+  createIngestHandler,
+  type IdentifiedSession,
+  type IngestAdapter,
+  type IngestSourceFileGroup,
+  type InteractionUpdate,
+  type NormalisedInteraction,
+  type ParsedSessionSlice,
+  type ParseSessionSliceInput,
+  type TokenBuckets,
+} from './ingest-pipeline';
+import {
+  literalCwdProjectResolver,
+  type CwdProjectResolver,
+} from './project-resolver';
+
+// The fake adapter tags its rows with a real Harness value because Harness is a
+// closed union; the pipeline treats it as an opaque label, so any member serves.
+export const FAKE_HARNESS: Harness = 'claude';
+
+const temporaryDirectories: string[] = [];
+
+export async function createPipelineFixture() {
+  const root = await mkdtemp(join(tmpdir(), 'llm-retro-ingest-pipeline-'));
+  temporaryDirectories.push(root);
+  const dataDirectory = join(root, 'data');
+  const logSource = join(root, 'sessions');
+  await mkdir(logSource, { recursive: true });
+  const connection = openDatabase({ LLM_RETRO_DATA_DIR: dataDirectory });
+  updateSettings(connection.database, {
+    timezone: 'Asia/Kolkata',
+    logSourceOverrides: { [FAKE_HARNESS]: [logSource] },
+  });
+  return { ...connection, root, logSource };
+}
+
+export async function cleanupPipelineFixtures() {
+  await Promise.all(
+    temporaryDirectories
+      .splice(0)
+      .map((directory) => rm(directory, { recursive: true, force: true })),
+  );
+}
+
+export interface FakeMetadata {
+  stableSessionId: string;
+}
+
+/**
+ * A canned-data adapter that satisfies the four-method IngestAdapter contract
+ * without any real Harness log format. Each behaviour under test is provoked by
+ * varying the on-disk files and settings the pipeline reads, never by teaching
+ * the adapter about the pipeline. A primary line is a JSON record describing one
+ * Interaction (`{ key, cwd, ... }`); a line carrying `{ update, sub }` — in the
+ * primary or any auxiliary file — is a sub-token backfill for an existing
+ * Interaction, mirroring the auxiliary re-read the pipeline owns per ADR-0007.
+ */
+export function createFakeAdapter(
+  overrides: {
+    enumerate?: (logSources: string[]) => Promise<IngestSourceFileGroup[]>;
+    identify?: (
+      primaryFilePath: string,
+      primaryContents: Buffer,
+    ) => IdentifiedSession<FakeMetadata>;
+  } = {},
+): IngestAdapter<FakeMetadata> {
+  return {
+    harness: FAKE_HARNESS,
+    displayName: 'Fake',
+    enumerateSourceFileGroups: overrides.enumerate ?? defaultEnumerate,
+    identifySession: overrides.identify ?? defaultIdentify,
+    parseSessionSlice: defaultParse,
+  };
+}
+
+export async function runPipeline(
+  adapter: IngestAdapter<FakeMetadata>,
+  database: Database,
+  options: {
+    correlationId?: string;
+    resolveProject?: CwdProjectResolver;
+    renameArchivedFile?: (oldPath: string, newPath: string) => Promise<void>;
+    progress?: (progress: unknown) => void;
+    log?: (message: string) => void;
+  } = {},
+): Promise<void> {
+  const handler = createIngestHandler(adapter, {
+    resolveProject: options.resolveProject ?? literalCwdProjectResolver,
+    renameArchivedFile: options.renameArchivedFile,
+  });
+  await handler.run(null, {
+    correlationId: options.correlationId ?? 'pipeline-test',
+    database,
+    progress: options.progress ?? (() => {}),
+    log: options.log ?? (() => {}),
+  });
+}
+
+export interface FakeInteractionRecord {
+  key: string;
+  cwd: string;
+  model?: string;
+  modelRaw?: string;
+  main?: Partial<TokenBuckets>;
+  sub?: Partial<TokenBuckets>;
+  spawnedSubagents?: boolean;
+  timestamp: number;
+}
+
+export async function writeLines(
+  path: string,
+  lines: Array<string | FakeInteractionRecord>,
+  options: { trailingNewline?: boolean } = {},
+): Promise<void> {
+  const rendered = lines.map((line) =>
+    typeof line === 'string' ? line : JSON.stringify(line),
+  );
+  await writeFile(
+    path,
+    rendered.join('\n') + (options.trailingNewline === false ? '' : '\n'),
+  );
+}
+
+const NULL_BUCKETS: TokenBuckets = {
+  input: null,
+  output: null,
+  cacheRead: null,
+  cacheWrite: null,
+};
+
+function toBuckets(partial?: Partial<TokenBuckets>): TokenBuckets {
+  return { ...NULL_BUCKETS, ...partial };
+}
+
+async function defaultEnumerate(
+  logSources: string[],
+): Promise<IngestSourceFileGroup[]> {
+  const groups: IngestSourceFileGroup[] = [];
+  for (const source of logSources) {
+    const entries = (await readdir(source))
+      .filter((entry) => entry.endsWith('.log'))
+      .sort();
+    for (const entry of entries) {
+      groups.push({
+        primaryFilePath: join(source, entry),
+        auxiliaryFilePaths: [],
+      });
+    }
+  }
+  return groups;
+}
+
+function defaultIdentify(
+  primaryFilePath: string,
+): IdentifiedSession<FakeMetadata> {
+  const stableSessionId = basename(primaryFilePath, extname(primaryFilePath));
+  return { stableSessionId, metadata: { stableSessionId } };
+}
+
+function defaultParse(
+  input: ParseSessionSliceInput<FakeMetadata>,
+): ParsedSessionSlice {
+  const interactions: NormalisedInteraction[] = [];
+  const interactionUpdates: InteractionUpdate[] = [];
+  const sources = [
+    input.primaryContents,
+    ...input.auxiliaryFiles.map((auxiliary) => auxiliary.contents),
+  ];
+  for (const source of sources) {
+    for (const line of source.split('\n')) {
+      if (line.trim().length === 0) continue;
+      const record = JSON.parse(line);
+      if (typeof record.update === 'string') {
+        interactionUpdates.push({
+          interactionKey: record.update,
+          subTokens: toBuckets(record.sub),
+        });
+      } else {
+        interactions.push(toInteraction(record));
+      }
+    }
+  }
+  const timestamps = interactions.map((interaction) => interaction.timestamp);
+  const session =
+    interactions.length > 0
+      ? {
+          startedAt: Math.min(...timestamps),
+          endedAt: Math.max(...timestamps),
+          interactions,
+        }
+      : null;
+  return { session, interactionUpdates };
+}
+
+function toInteraction(record: FakeInteractionRecord): NormalisedInteraction {
+  return {
+    interactionKey: record.key,
+    cwd: record.cwd,
+    model: record.model ?? 'fake-model',
+    modelRaw: record.modelRaw ?? record.model ?? 'fake-model-raw',
+    mainTokens: toBuckets(record.main),
+    subTokens: toBuckets(record.sub),
+    spawnedSubagents: record.spawnedSubagents ?? false,
+    timestamp: record.timestamp,
+  };
+}
