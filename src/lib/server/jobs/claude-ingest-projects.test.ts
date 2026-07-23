@@ -14,7 +14,7 @@ import {
 afterEach(cleanupClaudeIngestFixtures);
 
 describe('Claude ingest Project attribution', () => {
-  it('uses the real resolver for Session and Interaction opening cwds', async () => {
+  it('derives Session and Interaction Projects from Interaction opening cwds', async () => {
     const fixture = await createFixture();
     const sessionProjectRoot = join(fixture.logSource, 'session-project');
     const interactionProjectRoot = join(
@@ -86,12 +86,12 @@ describe('Claude ingest Project attribution', () => {
       const storedInteraction = fixture.database
         .select()
         .from(interactions)
-        .where(eq(interactions.openingUserRecordId, 'cross-project-prompt'))
+        .where(eq(interactions.interactionKey, 'cross-project-prompt'))
         .get();
 
-      expect(sessionProject).toMatchObject({ gitRemoteUrl: null });
+      expect(sessionProject).toBeUndefined();
       expect(interactionProject).toMatchObject({ gitRemoteUrl: remote });
-      expect(storedSession?.projectId).toBe(sessionProject?.id);
+      expect(storedSession?.projectId).toBe(interactionProject?.id);
       expect(storedInteraction?.projectId).toBe(interactionProject?.id);
     } finally {
       fixture.sqlite.close();

@@ -92,7 +92,7 @@ describe('analytical store', () => {
       );
       const interaction = {
         sessionId: session.id,
-        openingUserRecordId: 'record-1',
+        interactionKey: 'record-1',
         harness: 'codex',
         projectId: project.id,
         model: 'gpt-5.1-codex-max',
@@ -172,7 +172,7 @@ describe('analytical store', () => {
       );
       const stored = insertInteraction(connection.database, {
         sessionId: session.id,
-        openingUserRecordId: 'record-1',
+        interactionKey: 'record-1',
         harness: 'codex',
         projectId: project.id,
         model: 'gpt-5.1-codex-max',
@@ -202,7 +202,7 @@ describe('analytical store', () => {
       );
       const facts = [
         {
-          openingUserRecordId: 'record-1',
+          interactionKey: 'record-1',
           mainInputTokens: 11,
           mainOutputTokens: 13,
           mainCacheReadTokens: 17,
@@ -216,7 +216,7 @@ describe('analytical store', () => {
           localDate: '2025-01-06',
         },
         {
-          openingUserRecordId: 'record-2',
+          interactionKey: 'record-2',
           mainInputTokens: null,
           mainOutputTokens: null,
           mainCacheReadTokens: 5,
@@ -230,7 +230,7 @@ describe('analytical store', () => {
           localDate: '2025-01-13',
         },
         {
-          openingUserRecordId: 'record-3',
+          interactionKey: 'record-3',
           mainInputTokens: null,
           mainOutputTokens: null,
           mainCacheReadTokens: null,
@@ -445,7 +445,7 @@ describe('analytical store', () => {
       );
       insertInteraction(connection.database, {
         sessionId: session.id,
-        openingUserRecordId: 'record-1',
+        interactionKey: 'record-1',
         harness: 'codex',
         projectId: project.id,
         model: 'gpt-5',
@@ -488,7 +488,7 @@ describe('analytical store', () => {
       );
       insertInteraction(connection.database, {
         sessionId: session.id,
-        openingUserRecordId: 'record-1',
+        interactionKey: 'record-1',
         harness: 'codex',
         projectId: project.id,
         model: 'gpt-5',

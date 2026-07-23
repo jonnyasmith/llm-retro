@@ -214,18 +214,18 @@ async function writeSessionWithSubagent(projectDirectory: string) {
   return { sessionPath, subagentPath };
 }
 
-function validSessionRecords(openingUserRecordId: string) {
+function validSessionRecords(interactionKey: string) {
   return [
     {
       type: 'user',
-      uuid: openingUserRecordId,
+      uuid: interactionKey,
       cwd: '/work/alpha',
       timestamp: '2025-01-01T20:00:00.000Z',
       message: { content: 'Build it' },
     },
     {
       type: 'assistant',
-      uuid: `${openingUserRecordId}-answer`,
+      uuid: `${interactionKey}-answer`,
       timestamp: '2025-01-01T20:00:01.000Z',
       message: {
         model: 'claude-sonnet-4-6',
@@ -249,7 +249,7 @@ function archivePath(archiveRoot: string, sourcePath: string): string {
 function interactionEvidence(database: Database) {
   return database
     .select({
-      openingUserRecordId: interactions.openingUserRecordId,
+      interactionKey: interactions.interactionKey,
       model: interactions.model,
       mainInputTokens: interactions.mainInputTokens,
       mainOutputTokens: interactions.mainOutputTokens,

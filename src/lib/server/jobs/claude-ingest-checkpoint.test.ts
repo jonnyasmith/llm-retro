@@ -72,7 +72,7 @@ describe('Claude ingest Checkpoint resumption', () => {
       const initialState = await stat(sessionPath);
       expect(fixture.database.select().from(interactions).all()).toMatchObject([
         {
-          openingUserRecordId: 'checkpoint-prompt-1',
+          interactionKey: 'checkpoint-prompt-1',
           model: 'claude-sonnet-4-6',
         },
       ]);
@@ -89,14 +89,14 @@ describe('Claude ingest Checkpoint resumption', () => {
       fixture.database
         .update(interactions)
         .set({ model: 'unchanged-skip-sentinel' })
-        .where(eq(interactions.openingUserRecordId, 'checkpoint-prompt-1'))
+        .where(eq(interactions.interactionKey, 'checkpoint-prompt-1'))
         .run();
       await run('checkpoint-unchanged');
       expect(
         fixture.database
           .select({ model: interactions.model })
           .from(interactions)
-          .where(eq(interactions.openingUserRecordId, 'checkpoint-prompt-1'))
+          .where(eq(interactions.interactionKey, 'checkpoint-prompt-1'))
           .get(),
       ).toEqual({ model: 'unchanged-skip-sentinel' });
 
@@ -143,11 +143,11 @@ describe('Claude ingest Checkpoint resumption', () => {
         .all();
       expect(storedAfterGrowth).toHaveLength(2);
       expect(storedAfterGrowth[0]).toMatchObject({
-        openingUserRecordId: 'checkpoint-prompt-1',
+        interactionKey: 'checkpoint-prompt-1',
         model: 'unchanged-skip-sentinel',
       });
       expect(storedAfterGrowth[1]).toMatchObject({
-        openingUserRecordId: 'checkpoint-prompt-2',
+        interactionKey: 'checkpoint-prompt-2',
         model: 'claude-opus-4-8',
         mainInputTokens: 2,
         mainOutputTokens: 3,
@@ -194,7 +194,7 @@ describe('Claude ingest Checkpoint resumption', () => {
         fixture.database
           .select()
           .from(interactions)
-          .where(eq(interactions.openingUserRecordId, 'checkpoint-prompt-2'))
+          .where(eq(interactions.interactionKey, 'checkpoint-prompt-2'))
           .get(),
       ).toMatchObject({
         subInputTokens: 5,
@@ -263,7 +263,7 @@ describe('Claude ingest Checkpoint resumption', () => {
 
       expect(fixture.database.select().from(interactions).all()).toMatchObject([
         {
-          openingUserRecordId: 'continued-prompt',
+          interactionKey: 'continued-prompt',
           mainOutputTokens: 5,
         },
       ]);
@@ -368,7 +368,7 @@ describe('Claude ingest Checkpoint resumption', () => {
       await run('inline-resume-growth');
 
       expect(fixture.database.select().from(interactions).get()).toMatchObject({
-        openingUserRecordId: 'inline-resume-prompt',
+        interactionKey: 'inline-resume-prompt',
         subInputTokens: 4,
         subOutputTokens: 5,
         subCacheReadTokens: 6,
@@ -435,7 +435,7 @@ describe('Claude ingest Checkpoint resumption', () => {
       await run('replacement-second');
 
       expect(fixture.database.select().from(interactions).all()).toMatchObject([
-        { openingUserRecordId: 'replacement-prompt' },
+        { interactionKey: 'replacement-prompt' },
       ]);
       const replacementState = await stat(sessionPath);
       expect(fixture.database.select().from(checkpoints).get()).toMatchObject({

@@ -107,7 +107,7 @@ export function insertInteraction(
     .insert(interactions)
     .values(interaction)
     .onConflictDoNothing({
-      target: [interactions.sessionId, interactions.openingUserRecordId],
+      target: [interactions.sessionId, interactions.interactionKey],
     })
     .run();
 
@@ -117,7 +117,7 @@ export function insertInteraction(
     .where(
       and(
         eq(interactions.sessionId, interaction.sessionId),
-        eq(interactions.openingUserRecordId, interaction.openingUserRecordId),
+        eq(interactions.interactionKey, interaction.interactionKey),
       ),
     )
     .get();

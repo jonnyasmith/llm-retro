@@ -308,7 +308,7 @@ describe('Claude ingest sub-agent folding', () => {
         .all();
       expect(stored).toHaveLength(3);
       expect(stored[0]).toMatchObject({
-        openingUserRecordId: 'separate-prompt',
+        interactionKey: 'separate-prompt',
         model: 'claude-sonnet-4-6',
         mainInputTokens: 2,
         mainOutputTokens: 3,
@@ -318,7 +318,7 @@ describe('Claude ingest sub-agent folding', () => {
         subCacheWriteTokens: 44,
       });
       expect(stored[1]).toMatchObject({
-        openingUserRecordId: 'inline-prompt',
+        interactionKey: 'inline-prompt',
         model: 'claude-haiku-4-5',
         mainInputTokens: null,
         mainOutputTokens: 5,
@@ -328,7 +328,7 @@ describe('Claude ingest sub-agent folding', () => {
         subCacheWriteTokens: 6,
       });
       expect(stored[2]).toMatchObject({
-        openingUserRecordId: 'incomplete-prompt',
+        interactionKey: 'incomplete-prompt',
         model: 'claude-opus-4-8',
         subInputTokens: null,
         subOutputTokens: null,
@@ -443,14 +443,14 @@ describe('Claude ingest sub-agent folding', () => {
           .all(),
       ).toEqual([
         expect.objectContaining({
-          openingUserRecordId: 'spawning-prompt',
+          interactionKey: 'spawning-prompt',
           subInputTokens: null,
           subOutputTokens: null,
           subCacheReadTokens: null,
           subCacheWriteTokens: null,
         }),
         expect.objectContaining({
-          openingUserRecordId: 'later-prompt',
+          interactionKey: 'later-prompt',
           subInputTokens: null,
           subOutputTokens: null,
           subCacheReadTokens: null,
@@ -480,14 +480,14 @@ describe('Claude ingest sub-agent folding', () => {
         .orderBy(interactions.timestamp)
         .all();
       expect(stored[0]).toMatchObject({
-        openingUserRecordId: 'spawning-prompt',
+        interactionKey: 'spawning-prompt',
         subInputTokens: 12,
         subOutputTokens: 13,
         subCacheReadTokens: 14,
         subCacheWriteTokens: 15,
       });
       expect(stored[1]).toMatchObject({
-        openingUserRecordId: 'later-prompt',
+        interactionKey: 'later-prompt',
         subInputTokens: null,
         subOutputTokens: null,
         subCacheReadTokens: null,

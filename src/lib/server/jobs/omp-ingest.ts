@@ -1,15 +1,15 @@
 import { readdir } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import {
-  findClaudeInteractionContextByteOffset,
-  readClaudeSession,
-  readClaudeSubTokenUpdates,
-  type NormalisedClaudeSession,
-} from './claude-adapter';
+  findOmpInteractionContextByteOffset,
+  readOmpSession,
+  readOmpSessionMetadata,
+  readOmpSubTokenUpdates,
+  type OmpSessionMetadata,
+} from './omp-adapter';
 import {
   createIngestHandler,
   type IngestAdapter,
-  type NormalisedSession,
   type ParseSessionSliceInput,
 } from './ingest-pipeline';
 import type { CwdProjectResolver } from './project-resolver';
@@ -24,122 +24,130 @@ export {
 
 type ArchivedFileRename = (oldPath: string, newPath: string) => Promise<void>;
 
-export function createClaudeIngestJob(): Job<null> {
+export function createOmpIngestJob(): Job<null> {
   return {
-    identity: { type: 'ingest', scope: 'claude' },
+    identity: { type: 'ingest', scope: 'omp' },
     payload: null,
   };
 }
 
-export function createClaudeIngestHandler(
+export function createOmpIngestHandler(
   options: {
     resolveProject?: CwdProjectResolver;
     renameArchivedFile?: ArchivedFileRename;
   } = {},
 ): JobHandler<null> {
-  return createIngestHandler(claudeIngestAdapter, options);
+  return createIngestHandler(ompIngestAdapter, options);
 }
 
-const claudeIngestAdapter: IngestAdapter<null> = {
-  harness: 'claude',
-  displayName: 'Claude',
-  enumerateSourceFileGroups: enumerateClaudeSourceFileGroups,
-  identifySession(primaryFilePath) {
-    return {
-      stableSessionId: basename(primaryFilePath, '.jsonl'),
-      metadata: null,
-    };
+const ompIngestAdapter: IngestAdapter<OmpSessionMetadata> = {
+  harness: 'omp',
+  displayName: 'omp',
+  enumerateSourceFileGroups: enumerateOmpSourceFileGroups,
+  identifySession(primaryFilePath, primaryContents) {
+    const metadata = readOmpSessionMetadata(primaryFilePath, primaryContents);
+    return { stableSessionId: metadata.stableSessionId, metadata };
   },
-  parseSessionSlice: parseClaudeSessionSlice,
+  parseSessionSlice: parseOmpSessionSlice,
 };
 
-async function enumerateClaudeSourceFileGroups(logSources: string[]) {
+async function enumerateOmpSourceFileGroups(logSources: string[]) {
   const primaryFilePaths = await discoverSessionFiles(logSources);
   return Promise.all(
     primaryFilePaths.map(async (primaryFilePath) => ({
       primaryFilePath,
-      auxiliaryFilePaths: await discoverSubagentFiles(primaryFilePath),
+      auxiliaryFilePaths: await discoverNestedAgentFiles(primaryFilePath),
     })),
   );
 }
 
-function parseClaudeSessionSlice({
+function parseOmpSessionSlice({
   primaryFilePath,
   primaryContents,
   completePrimaryContents,
   completeByteOffset,
   startByteOffset,
   auxiliaryFiles,
-}: ParseSessionSliceInput<null>) {
+  metadata,
+}: ParseSessionSliceInput<OmpSessionMetadata>) {
   let parsed =
     primaryContents.length > 0
-      ? readClaudeSession(primaryFilePath, primaryContents, auxiliaryFiles)
+      ? readOmpSession(
+          primaryFilePath,
+          primaryContents,
+          auxiliaryFiles,
+          metadata,
+        )
       : null;
   if (parsed?.requiresInteractionContext === true && startByteOffset > 0) {
-    const contextByteOffset = findClaudeInteractionContextByteOffset(
+    const contextByteOffset = findOmpInteractionContextByteOffset(
       completePrimaryContents,
       startByteOffset,
     );
-    parsed = readClaudeSession(
+    parsed = readOmpSession(
       primaryFilePath,
       completePrimaryContents
         .subarray(contextByteOffset, completeByteOffset)
         .toString('utf8'),
       auxiliaryFiles,
+      metadata,
     );
   }
 
   return {
-    session: parsed === null ? null : toNormalisedSession(parsed),
+    session:
+      parsed === null
+        ? null
+        : {
+            startedAt: parsed.startedAt,
+            endedAt: parsed.endedAt,
+            interactions: parsed.interactions,
+          },
     interactionUpdates:
       auxiliaryFiles.length === 0
         ? []
-        : readClaudeSubTokenUpdates(
+        : readOmpSubTokenUpdates(
             primaryFilePath,
             completePrimaryContents
               .subarray(0, completeByteOffset)
               .toString('utf8'),
             auxiliaryFiles,
+            metadata,
           ),
   };
 }
 
-function toNormalisedSession(
-  session: NormalisedClaudeSession,
-): NormalisedSession {
-  return {
-    startedAt: session.startedAt,
-    endedAt: session.endedAt,
-    interactions: session.interactions.map((interaction) => ({
-      ...interaction,
-      spawnedSubagents: false,
-    })),
-  };
-}
-
-async function discoverSubagentFiles(sessionFilePath: string) {
-  const directoryPath = join(
-    dirname(sessionFilePath),
-    basename(sessionFilePath, '.jsonl'),
-    'subagents',
+async function discoverNestedAgentFiles(primaryFilePath: string) {
+  const sessionDirectory = join(
+    dirname(primaryFilePath),
+    basename(primaryFilePath, '.jsonl'),
   );
-  let entries;
-  try {
-    entries = await readdir(directoryPath, { withFileTypes: true });
-  } catch (cause) {
-    if (isMissingPath(cause)) return [];
-    throw cause;
-  }
+  const paths: string[] = [];
 
-  return entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith('.jsonl'))
-    .sort((left, right) => left.name.localeCompare(right.name))
-    .map((entry) => join(directoryPath, entry.name));
+  const visit = async (directoryPath: string): Promise<void> => {
+    let entries;
+    try {
+      entries = await readdir(directoryPath, { withFileTypes: true });
+    } catch (cause) {
+      if (isMissingPath(cause)) return;
+      throw cause;
+    }
+    for (const entry of entries) {
+      const path = join(directoryPath, entry.name);
+      if (entry.isDirectory()) {
+        await visit(path);
+      } else if (entry.isFile() && entry.name.endsWith('.jsonl')) {
+        paths.push(path);
+      }
+    }
+  };
+
+  await visit(sessionDirectory);
+  return paths.sort();
 }
 
 async function discoverSessionFiles(logSources: string[]): Promise<string[]> {
   const paths: string[] = [];
-
   for (const logSource of logSources) {
     let projectDirectories;
     try {
@@ -148,7 +156,6 @@ async function discoverSessionFiles(logSources: string[]): Promise<string[]> {
       if (isMissingPath(cause)) continue;
       throw cause;
     }
-
     for (const projectDirectory of projectDirectories) {
       if (!projectDirectory.isDirectory()) continue;
       const directoryPath = join(logSource, projectDirectory.name);
@@ -160,7 +167,6 @@ async function discoverSessionFiles(logSources: string[]): Promise<string[]> {
       }
     }
   }
-
   return paths.sort();
 }
 

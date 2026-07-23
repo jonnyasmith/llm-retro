@@ -9,11 +9,11 @@ A coding tool that drives an LLM and writes its own session logs — currently C
 _Avoid_: Agent, tool, client, CLI.
 
 **Session**:
-One run of a single Harness in a single project, corresponding to one log file. A grouping dimension above Interaction; the count of Sessions is itself a metric of interest.
+One run of a single Harness, corresponding to one log file. A grouping dimension above Interaction; the count of Sessions is itself a metric of interest. The backing log file may move on disk (for example, a completed Codex rollout moves into `archived_sessions`) without changing the Session or Checkpoint identity. `session.projectId` is nullable and derived from the Session's Interactions: it is their sole common Project only when every Interaction agrees, otherwise null means "heterogeneous — see the Interactions". Project attribution is authoritative at the Interaction, not the Session.
 _Avoid_: Conversation, thread, chat, rollout.
 
 **Interaction**:
-One user prompt together with all model and tool activity it triggers, up to the next user prompt. Bounded by the user's inputs, not by the model's turns — a single Interaction may span many underlying log records and several model responses. The atomic unit of work the tool tracks; it carries the time (for hour/day metrics), the Model, and the token usage. Sub-agent activity the harness spawns is not its own Interaction; its tokens fold into the Interaction that spawned it, retained as a main-vs-sub-agent split.
+One user prompt together with all model and tool activity it triggers, up to the next user prompt, requiring at least one assistant response. Bounded by the user's inputs, not by the model's turns — a single Interaction may span many underlying log records and several model responses. The atomic unit of work the tool tracks; it carries the time (for hour/day metrics), the Model, and the token usage. Sub-agent activity the harness spawns is not its own Interaction; its tokens fold into the Interaction that spawned it when the Harness records them, retained as a main-vs-sub-agent split. When a Harness such as pi records that sub-agents were spawned but omits their usage, sub-agent token buckets remain null and `spawnedSubagents` is true to disclose that the Interaction total is a floor. Each Interaction has a stable **interaction key** — an identifier the Harness's adapter supplies that survives re-ingest — used with its Session to recognise the same Interaction across runs; what serves as that key differs by Harness (pi genuine user message `id`; Codex `turn_context` `turn_id`).
 _Avoid_: Turn, message, request, exchange, prompt.
 
 **Model**:

@@ -6,7 +6,7 @@
 
 - Solution-wide vocabulary → docs/agents/domain.md
 - System-wide decisions → docs/adr/
-- Issue tracker (issues + specs as markdown under .scratch/) → docs/agents/issue-tracker.md
+- Issue tracker (issues + specs as GitHub issues via gh) → docs/agents/issue-tracker.md
 - Triage labels (needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix) → docs/agents/triage-labels.md
 
 ## Comment only what the code cannot say

@@ -22,6 +22,20 @@
       "when": 1784732415666,
       "tag": "0002_job-runner",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1784792218240,
+      "tag": "0003_interaction-key-and-pi-subagents",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1784795632422,
+      "tag": "0004_nullable-session-project",
+      "breakpoints": true
     }
   ]
 }

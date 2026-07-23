@@ -178,20 +178,18 @@ describe('Claude ingest Job handler', () => {
         log: vi.fn(),
       });
 
-      expect(fixture.database.select().from(projects).all()).toEqual([
+      const storedProjects = fixture.database.select().from(projects).all();
+      expect(storedProjects).toEqual([
         expect.objectContaining({
           rootPath: '/resolved/work/alpha',
           gitRemoteUrl: 'git@example.com:work/alpha.git',
-        }),
-        expect.objectContaining({
-          rootPath: '/resolved/work/beta',
-          gitRemoteUrl: 'git@example.com:work/beta.git',
         }),
       ]);
       expect(fixture.database.select().from(sessions).all()).toEqual([
         expect.objectContaining({
           harness: 'claude',
           stableSessionId: firstSessionId,
+          projectId: storedProjects[0].id,
           logFilePath: firstPath,
           startedAt: Date.parse('2025-01-01T19:59:00.000Z'),
           endedAt: Date.parse('2025-01-01T21:00:00.000Z'),
@@ -199,6 +197,7 @@ describe('Claude ingest Job handler', () => {
         expect.objectContaining({
           harness: 'claude',
           stableSessionId: secondSessionId,
+          projectId: null,
           logFilePath: secondPath,
           startedAt: Date.parse('2025-01-02T10:00:00.000Z'),
           endedAt: Date.parse('2025-01-02T10:00:00.000Z'),
@@ -206,7 +205,7 @@ describe('Claude ingest Job handler', () => {
       ]);
       expect(fixture.database.select().from(interactions).all()).toEqual([
         expect.objectContaining({
-          openingUserRecordId: 'prompt-1',
+          interactionKey: 'prompt-1',
           harness: 'claude',
           model: 'claude-opus-4-8',
           modelRaw: 'claude-opus-4-8[1m]',
@@ -220,7 +219,7 @@ describe('Claude ingest Job handler', () => {
           localDate: '2025-01-02',
         }),
         expect.objectContaining({
-          openingUserRecordId: 'prompt-2',
+          interactionKey: 'prompt-2',
           model: 'claude-sonnet-4-6',
           modelRaw: 'claude-sonnet-4-6-20260217',
           mainInputTokens: 0,
@@ -229,7 +228,7 @@ describe('Claude ingest Job handler', () => {
           mainCacheWriteTokens: null,
         }),
       ]);
-      expect(resolveProject).toHaveBeenCalledTimes(2);
+      expect(resolveProject).toHaveBeenCalledTimes(1);
       expect(progress.mock.calls).toEqual([
         [{ filesTotal: 2, filesDone: 0 }],
         [{ filesTotal: 2, filesDone: 0, currentFile: firstPath }],
@@ -238,12 +237,14 @@ describe('Claude ingest Job handler', () => {
         [{ filesTotal: 2, filesDone: 2 }],
       ]);
 
-      const betaProject = fixture.database
-        .select()
-        .from(projects)
-        .where(eq(projects.rootPath, '/resolved/work/beta'))
-        .get();
-      if (!betaProject) throw new Error('Expected beta Project fixture');
+      const [betaProject] = fixture.database
+        .insert(projects)
+        .values({
+          rootPath: '/resolved/work/beta',
+          gitRemoteUrl: 'git@example.com:work/beta.git',
+        })
+        .returning()
+        .all();
       fixture.database
         .update(interactions)
         .set({
@@ -256,7 +257,7 @@ describe('Claude ingest Job handler', () => {
           localHour: 0,
           localDate: '1970-01-01',
         })
-        .where(eq(interactions.openingUserRecordId, 'prompt-1'))
+        .where(eq(interactions.interactionKey, 'prompt-1'))
         .run();
       fixture.database.delete(checkpoints).run();
 
@@ -274,7 +275,7 @@ describe('Claude ingest Job handler', () => {
       const refreshed = fixture.database
         .select()
         .from(interactions)
-        .where(eq(interactions.openingUserRecordId, 'prompt-1'))
+        .where(eq(interactions.interactionKey, 'prompt-1'))
         .get();
       const refreshedSession = fixture.database
         .select()

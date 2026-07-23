@@ -1,11 +1,20 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
   import {
+    ingestHarnessLabels,
     isTerminalJobRunStatus,
     type JobRunSummary,
+    type IngestHarness,
   } from '$lib/jobs/contracts';
 
-  let { runs }: { runs: JobRunSummary[] } = $props();
+  let {
+    harness,
+    runs,
+  }: {
+    harness: IngestHarness;
+    runs: JobRunSummary[];
+  } = $props();
+  const harnessLabel = $derived(ingestHarnessLabels[harness]);
 
   function formatTimestamp(timestamp: number | null): string {
     if (timestamp === null) return 'Not started';
@@ -25,11 +34,11 @@
   }
 </script>
 
-<section aria-labelledby="history-heading">
+<section aria-labelledby={`${harness}-history-heading`}>
   <div class="section-heading">
     <div>
       <p class="eyebrow">Past runs</p>
-      <h2 id="history-heading">Claude history</h2>
+      <h2 id={`${harness}-history-heading`}>{harnessLabel} history</h2>
     </div>
     <span class="run-count">{runs.length} runs</span>
   </div>
@@ -63,14 +72,17 @@
             <td>{run.filesDone} / {run.filesTotal}</td>
             <td>
               <a
-                href={resolve(`/?run=${encodeURIComponent(run.correlationId)}`)}
-                >{isTerminalJobRunStatus(run.status) ? 'View' : 'Watch'}</a
+                href={resolve(
+                  `/?harness=${encodeURIComponent(harness)}&run=${encodeURIComponent(run.correlationId)}`,
+                )}>{isTerminalJobRunStatus(run.status) ? 'View' : 'Watch'}</a
               >
             </td>
           </tr>
         {:else}
           <tr>
-            <td colspan="5" class="empty">No Claude ingestion runs yet.</td>
+            <td colspan="5" class="empty"
+              >No {harnessLabel} ingestion runs yet.</td
+            >
           </tr>
         {/each}
       </tbody>

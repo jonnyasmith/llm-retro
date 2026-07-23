@@ -38,11 +38,16 @@ export function openDatabase(environment: NodeJS.ProcessEnv = process.env) {
 
   const databasePath = join(dataDirectory, 'llm-retro.sqlite3');
   const sqlite = new Sqlite(databasePath);
-  sqlite.pragma('foreign_keys = ON');
   sqlite.pragma('journal_mode = WAL');
+  sqlite.pragma('foreign_keys = OFF');
 
   const database = drizzle(sqlite, { schema });
   migrate(database, { migrationsFolder: resolve('drizzle') });
+  const foreignKeyViolations = sqlite.pragma('foreign_key_check');
+  if (!Array.isArray(foreignKeyViolations) || foreignKeyViolations.length > 0) {
+    throw new Error('Database migration left foreign key violations');
+  }
+  sqlite.pragma('foreign_keys = ON');
 
   return { database, databasePath, sqlite };
 }

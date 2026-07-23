@@ -1,3 +1,5 @@
+import type { TokenBuckets } from './ingest-pipeline';
+
 interface ClaudeRecord {
   type?: unknown;
   uuid?: unknown;
@@ -17,22 +19,15 @@ interface ClaudeRecord {
 }
 
 interface PendingInteraction {
-  openingUserRecordId: string;
+  interactionKey: string;
   cwd: string;
   timestamp: number;
   assistants: ClaudeRecord[];
   records: ClaudeRecord[];
 }
 
-export interface TokenBuckets {
-  input: number | null;
-  output: number | null;
-  cacheRead: number | null;
-  cacheWrite: number | null;
-}
-
 export interface NormalisedClaudeInteraction {
-  openingUserRecordId: string;
+  interactionKey: string;
   cwd: string;
   model: string;
   modelRaw: string;
@@ -50,7 +45,7 @@ export interface NormalisedClaudeSession {
 }
 
 export interface ClaudeSubTokenUpdate {
-  openingUserRecordId: string;
+  interactionKey: string;
   subTokens: TokenBuckets;
 }
 
@@ -91,7 +86,7 @@ export function readClaudeSubTokenUpdates(
     records,
   );
   return pendingInteractions.map((interaction) => ({
-    openingUserRecordId: interaction.openingUserRecordId,
+    interactionKey: interaction.interactionKey,
     subTokens: sumTokens(
       collectSubagentAssistants(
         agentsByInteraction.get(interaction) ?? [],
@@ -290,13 +285,13 @@ function openInteraction(
   record: ClaudeRecord,
   filePath: string,
 ): PendingInteraction {
-  const openingUserRecordId =
+  const interactionKey =
     typeof record.uuid === 'string'
       ? record.uuid
       : typeof record.id === 'string'
         ? record.id
         : null;
-  if (!openingUserRecordId) {
+  if (!interactionKey) {
     throw new Error(`Genuine Claude user record has no id: ${filePath}`);
   }
   if (typeof record.cwd !== 'string' || record.cwd.length === 0) {
@@ -309,7 +304,7 @@ function openInteraction(
     );
   }
   return {
-    openingUserRecordId,
+    interactionKey,
     cwd: record.cwd,
     timestamp,
     assistants: [],
@@ -335,7 +330,7 @@ function normaliseInteraction(
     agentRecords,
   );
   return {
-    openingUserRecordId: pending.openingUserRecordId,
+    interactionKey: pending.interactionKey,
     cwd: pending.cwd,
     model: canonicaliseModel(modelRaw),
     modelRaw,
