@@ -182,10 +182,6 @@ function openInteraction(
   record: CodexRecord,
   filePath: string,
 ): PendingInteraction {
-  const interactionKey = record.payload?.turn_id;
-  if (typeof interactionKey !== 'string' || interactionKey.length === 0) {
-    throw new Error(`Codex turn_context has no turn_id: ${filePath}`);
-  }
   const cwd = record.payload?.cwd;
   if (typeof cwd !== 'string' || cwd.length === 0) {
     throw new Error(`Codex turn_context has no cwd: ${filePath}`);
@@ -194,10 +190,18 @@ function openInteraction(
   if (typeof modelRaw !== 'string' || modelRaw.length === 0) {
     throw new Error(`Codex turn_context has no model: ${filePath}`);
   }
+  if (typeof record.timestamp !== 'string') {
+    throw new Error(`Codex turn_context has an invalid timestamp: ${filePath}`);
+  }
   const timestamp = parseTimestamp(record.timestamp);
   if (timestamp === null) {
     throw new Error(`Codex turn_context has an invalid timestamp: ${filePath}`);
   }
+  // Older Codex rollouts omit turn_id; the record timestamp is a stable,
+  // per-turn key that survives incremental re-ingest slicing.
+  const turnId = record.payload?.turn_id;
+  const interactionKey =
+    typeof turnId === 'string' && turnId.length > 0 ? turnId : record.timestamp;
   return {
     interactionKey,
     cwd,

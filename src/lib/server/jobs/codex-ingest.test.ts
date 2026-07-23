@@ -395,6 +395,72 @@ describe('Codex ingest Job handler', () => {
     }
   });
 
+  it('keys turns by timestamp when turn_context has no turn_id', async () => {
+    const fixture = await createCodexIngestFixture();
+    const stableSessionId = '33333333-3333-4333-8333-333333333333';
+    const sessionPath = join(
+      fixture.sessionDirectory,
+      `rollout-2025-01-02T20-00-00-${stableSessionId}.jsonl`,
+    );
+    const event = (timestamp: string, type: string, payload = {}) => ({
+      timestamp,
+      type: 'event_msg',
+      payload: { type, ...payload },
+    });
+    await writeCodexJsonLines(sessionPath, [
+      {
+        timestamp: '2025-01-02T20:00:00.000Z',
+        type: 'session_meta',
+        payload: { id: stableSessionId, timestamp: '2025-01-02T20:00:00.000Z' },
+      },
+      {
+        timestamp: '2025-01-02T20:10:00.000Z',
+        type: 'turn_context',
+        payload: { cwd: '/work/codex', model: 'gpt-5-codex' },
+      },
+      event('2025-01-02T20:10:01.000Z', 'user_message'),
+      event('2025-01-02T20:10:02.000Z', 'agent_message'),
+      event('2025-01-02T20:10:03.000Z', 'token_count', {
+        info: {
+          last_token_usage: {
+            input_tokens: 10,
+            cached_input_tokens: 2,
+            output_tokens: 3,
+            reasoning_output_tokens: 1,
+            total_tokens: 13,
+          },
+        },
+      }),
+      event('2025-01-02T20:10:04.000Z', 'task_complete'),
+    ]);
+
+    const handler = createCodexIngestHandler({
+      resolveProject: vi.fn(async () => ({
+        rootPath: '/work/codex',
+        gitRemoteUrl: 'git@example.com:codex.git',
+      })),
+    });
+
+    try {
+      await handler.run(null, {
+        correlationId: 'codex-correlation-no-turn-id',
+        database: fixture.database,
+        progress: vi.fn(),
+        log: vi.fn(),
+      });
+
+      expect(fixture.database.select().from(interactions).all()).toEqual([
+        expect.objectContaining({
+          interactionKey: '2025-01-02T20:10:00.000Z',
+          harness: 'codex',
+          model: 'gpt-5-codex',
+        }),
+      ]);
+    } finally {
+      fixture.sqlite.close();
+    }
+  });
+
   it('exposes the Codex-scoped empty-payload Job', () => {
     expect(createCodexIngestJob()).toEqual({
       identity: { type: 'ingest', scope: 'codex' },
