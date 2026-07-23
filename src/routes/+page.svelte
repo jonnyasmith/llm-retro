@@ -11,7 +11,7 @@
   <title>Jobs · LLM Retro</title>
   <meta
     name="description"
-    content="Run Claude, Codex, and pi ingestion and watch progress and history."
+    content="Run Claude, Codex, pi, and omp ingestion and watch progress and history."
   />
 </svelte:head>
 
@@ -19,7 +19,7 @@
   <PageIntro
     eyebrow="Local-first work tracking"
     title="Jobs"
-    description="Bring Claude, Codex, and pi activity into LLM Retro and watch every run from start to finish."
+    description="Bring Claude, Codex, pi, and omp activity into LLM Retro and watch every run from start to finish."
   />
 
   <IngestJob
@@ -37,9 +37,15 @@
     runs={data.piRuns}
     activeCorrelationId={data.piActiveCorrelationId}
   />
+  <IngestJob
+    harness="omp"
+    runs={data.ompRuns}
+    activeCorrelationId={data.ompActiveCorrelationId}
+  />
   <JobRunHistory harness="claude" runs={data.claudeRuns} />
   <JobRunHistory harness="codex" runs={data.codexRuns} />
   <JobRunHistory harness="pi" runs={data.piRuns} />
+  <JobRunHistory harness="omp" runs={data.ompRuns} />
 </main>
 
 <style>

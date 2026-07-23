@@ -10,6 +10,7 @@ export const ingestHarnessLabels = {
   claude: 'Claude',
   codex: 'Codex',
   pi: 'pi',
+  omp: 'omp',
 } as const;
 
 export type IngestHarness = keyof typeof ingestHarnessLabels;

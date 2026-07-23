@@ -2,6 +2,7 @@ import type { Database } from './database/connection';
 import { createClaudeIngestHandler } from './jobs/claude-ingest';
 import { createCodexIngestHandler } from './jobs/codex-ingest';
 import { createPiIngestHandler } from './jobs/pi-ingest';
+import { createOmpIngestHandler } from './jobs/omp-ingest';
 import { JobDispatcher, reconcileInterruptedJobRuns } from './jobs/dispatcher';
 import { JobEventSource } from './jobs/events';
 import { stubJobHandler } from './jobs/stub-job';
@@ -21,6 +22,10 @@ export function initialiseRuntime(database: Database) {
     createCodexIngestHandler(),
   );
   jobBackend.register({ type: 'ingest', scope: 'pi' }, createPiIngestHandler());
+  jobBackend.register(
+    { type: 'ingest', scope: 'omp' },
+    createOmpIngestHandler(),
+  );
   const dispatcher = new JobDispatcher(database, jobEvents, {
     backend: jobBackend,
   });
