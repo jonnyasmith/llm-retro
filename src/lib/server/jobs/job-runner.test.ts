@@ -18,7 +18,7 @@ async function createFixture() {
   const listenerErrors = vi.fn();
   const events = new JobEventSource({ onListenerError: listenerErrors });
   const backend = new InProcessJobBackend(connection.database);
-  backend.register('stub', stubJobHandler);
+  backend.registerScoped('stub', stubJobHandler);
   const dispatcher = new JobDispatcher(connection.database, events, {
     backend,
   });
@@ -145,7 +145,10 @@ describe('Job dispatcher contract', () => {
 
     try {
       fixture.backend.register('controlled-first', first.handler);
-      fixture.backend.register('controlled-second', second.handler);
+      fixture.backend.register(
+        { type: 'controlled-second', scope: 'second' },
+        second.handler,
+      );
       const firstCorrelationId = fixture.dispatcher.dispatch(first.job);
       const duplicateCorrelationId = fixture.dispatcher.dispatch({
         ...first.job,
@@ -185,17 +188,20 @@ describe('Job dispatcher contract', () => {
     const fixture = await createFixture();
 
     try {
-      fixture.backend.register('success', {
-        async run(_payload, context) {
-          context.log('started');
-          context.progress({
-            filesTotal: 2,
-            filesDone: 1,
-            currentFile: '/logs/one.jsonl',
-          });
-          context.progress({ filesTotal: 2, filesDone: 2 });
+      fixture.backend.register(
+        { type: 'success', scope: 'one' },
+        {
+          async run(_payload, context) {
+            context.log('started');
+            context.progress({
+              filesTotal: 2,
+              filesDone: 1,
+              currentFile: '/logs/one.jsonl',
+            });
+            context.progress({ filesTotal: 2, filesDone: 2 });
+          },
         },
-      });
+      );
       fixture.backend.register('failure', {
         async run() {
           throw new Error('deliberate failure');

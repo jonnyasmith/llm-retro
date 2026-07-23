@@ -47,22 +47,38 @@ export interface JobExecutionBackend {
 
 export class InProcessJobBackend implements JobExecutionBackend {
   readonly #handlers = new Map<string, JobHandler>();
+  readonly #scopedTypeHandlers = new Map<string, JobHandler>();
 
   constructor(private readonly database: Database) {}
 
   register<Payload extends JobPayload>(
+    identity: string | JobIdentity,
+    handler: JobHandler<Payload>,
+  ): void {
+    const key =
+      typeof identity === 'string'
+        ? JSON.stringify([identity, ''])
+        : JSON.stringify([identity.type, identity.scope ?? '']);
+    this.#handlers.set(key, handler as JobHandler);
+  }
+
+  registerScoped<Payload extends JobPayload>(
     type: string,
     handler: JobHandler<Payload>,
   ): void {
-    this.#handlers.set(type, handler as JobHandler);
+    this.#scopedTypeHandlers.set(type, handler as JobHandler);
   }
 
   execute(job: Job, observer: JobExecutionObserver): Promise<void> {
-    const handler = this.#handlers.get(job.identity.type);
+    const scope = job.identity.scope ?? '';
+    const identityKey = JSON.stringify([job.identity.type, scope]);
+    const handler =
+      this.#handlers.get(identityKey) ??
+      (scope.length > 0
+        ? this.#scopedTypeHandlers.get(job.identity.type)
+        : undefined);
     if (!handler) {
-      throw new Error(
-        `No handler registered for Job type: ${job.identity.type}`,
-      );
+      throw new Error(`No handler registered for Job identity: ${identityKey}`);
     }
 
     return handler.run(job.payload, {

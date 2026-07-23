@@ -1,4 +1,5 @@
 import type { Database } from './database/connection';
+import { createClaudeIngestHandler } from './jobs/claude-ingest';
 import { JobDispatcher, reconcileInterruptedJobRuns } from './jobs/dispatcher';
 import { JobEventSource } from './jobs/events';
 import { stubJobHandler } from './jobs/stub-job';
@@ -8,7 +9,11 @@ export function initialiseRuntime(database: Database) {
   reconcileInterruptedJobRuns(database);
   const jobEvents = new JobEventSource();
   const jobBackend = new InProcessJobBackend(database);
-  jobBackend.register('stub', stubJobHandler);
+  jobBackend.registerScoped('stub', stubJobHandler);
+  jobBackend.register(
+    { type: 'ingest', scope: 'claude' },
+    createClaudeIngestHandler(),
+  );
   const dispatcher = new JobDispatcher(database, jobEvents, {
     backend: jobBackend,
   });
