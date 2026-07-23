@@ -1,7 +1,7 @@
 import { readdir } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import {
-  findCodexTurnContextByteOffset,
+  findCodexPromptResumeContext,
   readCodexSession,
   readCodexSessionMetadata,
   type CodexSessionMetadata,
@@ -62,16 +62,23 @@ function parseCodexSessionSlice({
   startByteOffset,
   metadata,
 }: ParseSessionSliceInput<CodexSessionMetadata>) {
+  let previousTotalTokenUsage: number | null = null;
   if (startByteOffset > 0) {
-    const contextByteOffset = findCodexTurnContextByteOffset(
+    const resumeContext = findCodexPromptResumeContext(
       completePrimaryContents,
       startByteOffset,
     );
     primaryContents = completePrimaryContents
-      .subarray(contextByteOffset, completeByteOffset)
+      .subarray(resumeContext.byteOffset, completeByteOffset)
       .toString('utf8');
+    previousTotalTokenUsage = resumeContext.previousTotalTokenUsage;
   }
-  const session = readCodexSession(primaryFilePath, primaryContents, metadata);
+  const session = readCodexSession(
+    primaryFilePath,
+    primaryContents,
+    metadata,
+    previousTotalTokenUsage,
+  );
   return {
     session,
     interactionUpdates: [],

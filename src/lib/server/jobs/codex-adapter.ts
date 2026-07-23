@@ -9,10 +9,9 @@ interface CodexRecord {
 
 interface PendingInteraction {
   interactionKey: string;
-  cwd: string;
-  modelRaw: string;
+  cwd: string | null;
+  modelRaw: string | null;
   timestamp: number;
-  hasGenuineUserMessage: boolean;
   hasAssistantResponse: boolean;
   hasTokenUsage: boolean;
   tokens: TokenBuckets;
@@ -71,6 +70,7 @@ export function readCodexSession(
   filePath: string,
   contents: string,
   metadata: CodexSessionMetadata,
+  initialTotalTokenUsage: number | null = null,
 ): NormalisedCodexSession | null {
   const records = parseRecords(contents, filePath);
   let startedAt = metadata.timestamp;
@@ -85,9 +85,12 @@ export function readCodexSession(
   const interactions: NormalisedInteraction[] = [];
   let firstTurnCwd: string | null = null;
   let pending: PendingInteraction | null = null;
+  let maximumTotalTokenUsage = initialTotalTokenUsage;
   const finishPending = () => {
     if (
-      pending?.hasGenuineUserMessage &&
+      pending !== null &&
+      pending.cwd !== null &&
+      pending.modelRaw !== null &&
       pending.hasAssistantResponse &&
       pending.hasTokenUsage
     ) {
@@ -107,21 +110,34 @@ export function readCodexSession(
 
   for (const record of records) {
     if (record.type === 'turn_context') {
-      finishPending();
-      pending = openInteraction(record, filePath);
-      firstTurnCwd ??= pending.cwd;
+      const attribution = readTurnAttribution(record, filePath);
+      firstTurnCwd ??= attribution.cwd;
+      if (pending && pending.cwd === null) {
+        pending.cwd = attribution.cwd;
+        pending.modelRaw = attribution.modelRaw;
+      }
+      if (pending && attribution.turnId !== null) {
+        pending.interactionKey = attribution.turnId;
+      }
       continue;
     }
-    if (!pending || record.type !== 'event_msg') continue;
+    if (record.type !== 'event_msg') continue;
     const eventType = record.payload?.type;
-    if (eventType === 'task_complete') {
+    if (eventType === 'user_message') {
       finishPending();
-    } else if (eventType === 'user_message') {
-      pending.hasGenuineUserMessage = true;
+      pending = openInteraction(record, filePath);
     } else if (eventType === 'agent_message') {
-      pending.hasAssistantResponse = true;
+      if (pending) pending.hasAssistantResponse = true;
     } else if (eventType === 'token_count') {
-      addLastTokenUsage(pending, record, filePath);
+      const totalTokenUsage = readTotalTokenUsage(record, filePath);
+      if (
+        totalTokenUsage !== null &&
+        (maximumTotalTokenUsage === null ||
+          totalTokenUsage > maximumTotalTokenUsage)
+      ) {
+        maximumTotalTokenUsage = totalTokenUsage;
+        if (pending) addLastTokenUsage(pending, record, filePath);
+      }
     }
   }
   finishPending();
@@ -131,13 +147,17 @@ export function readCodexSession(
   return { startedAt, endedAt, interactions };
 }
 
-export function findCodexTurnContextByteOffset(
+export function findCodexPromptResumeContext(
   contents: Buffer,
   beforeByteOffset: number,
-): number {
+): { byteOffset: number; previousTotalTokenUsage: number | null } {
   let lineStart = 0;
-  let lastTurnContextStart = 0;
   let lineNumber = 1;
+  let maximumTotalTokenUsage: number | null = null;
+  let previousPrompt:
+    { byteOffset: number; previousTotalTokenUsage: number | null } | undefined;
+  let latestPrompt:
+    { byteOffset: number; previousTotalTokenUsage: number | null } | undefined;
   while (lineStart < beforeByteOffset) {
     const newline = contents.indexOf(10, lineStart);
     if (newline === -1 || newline >= beforeByteOffset) break;
@@ -148,12 +168,29 @@ export function findCodexTurnContextByteOffset(
         '<Codex primary context>',
         lineNumber,
       );
-      if (record.type === 'turn_context') lastTurnContextStart = lineStart;
+      if (isGenuinePrompt(record)) {
+        previousPrompt = latestPrompt;
+        latestPrompt = {
+          byteOffset: lineStart,
+          previousTotalTokenUsage: maximumTotalTokenUsage,
+        };
+      } else if (
+        record.type === 'event_msg' &&
+        record.payload?.type === 'token_count'
+      ) {
+        const total = readTotalTokenUsage(record, '<Codex primary context>');
+        if (
+          total !== null &&
+          (maximumTotalTokenUsage === null || total > maximumTotalTokenUsage)
+        ) {
+          maximumTotalTokenUsage = total;
+        }
+      }
     }
     lineStart = newline + 1;
     lineNumber += 1;
   }
-  return lastTurnContextStart;
+  return previousPrompt ?? { byteOffset: 0, previousTotalTokenUsage: null };
 }
 
 function parseRecords(
@@ -179,10 +216,36 @@ function parseRecords(
   return records;
 }
 
+function isGenuinePrompt(record: CodexRecord): boolean {
+  return record.type === 'event_msg' && record.payload?.type === 'user_message';
+}
+
 function openInteraction(
   record: CodexRecord,
   filePath: string,
 ): PendingInteraction {
+  if (typeof record.timestamp !== 'string') {
+    throw new Error(`Codex user_message has an invalid timestamp: ${filePath}`);
+  }
+  const timestamp = parseTimestamp(record.timestamp);
+  if (timestamp === null) {
+    throw new Error(`Codex user_message has an invalid timestamp: ${filePath}`);
+  }
+  return {
+    interactionKey: record.timestamp,
+    cwd: null,
+    modelRaw: null,
+    timestamp,
+    hasAssistantResponse: false,
+    hasTokenUsage: false,
+    tokens: { ...nullTokens },
+  };
+}
+
+function readTurnAttribution(
+  record: CodexRecord,
+  filePath: string,
+): { cwd: string; modelRaw: string; turnId: string | null } {
   const cwd = record.payload?.cwd;
   if (typeof cwd !== 'string' || cwd.length === 0) {
     throw new Error(`Codex turn_context has no cwd: ${filePath}`);
@@ -191,28 +254,30 @@ function openInteraction(
   if (typeof modelRaw !== 'string' || modelRaw.length === 0) {
     throw new Error(`Codex turn_context has no model: ${filePath}`);
   }
-  if (typeof record.timestamp !== 'string') {
-    throw new Error(`Codex turn_context has an invalid timestamp: ${filePath}`);
-  }
-  const timestamp = parseTimestamp(record.timestamp);
-  if (timestamp === null) {
-    throw new Error(`Codex turn_context has an invalid timestamp: ${filePath}`);
-  }
-  // Older Codex rollouts omit turn_id; the record timestamp is a stable,
-  // per-turn key that survives incremental re-ingest slicing.
   const turnId = record.payload?.turn_id;
-  const interactionKey =
-    typeof turnId === 'string' && turnId.length > 0 ? turnId : record.timestamp;
   return {
-    interactionKey,
     cwd,
     modelRaw,
-    timestamp,
-    hasGenuineUserMessage: false,
-    hasAssistantResponse: false,
-    hasTokenUsage: false,
-    tokens: { ...nullTokens },
+    turnId: typeof turnId === 'string' && turnId.length > 0 ? turnId : null,
   };
+}
+
+function readTotalTokenUsage(
+  record: CodexRecord,
+  filePath: string,
+): number | null {
+  const info = record.payload?.info;
+  if (!isRecord(info) || info.total_token_usage === null) return null;
+  if (!isRecord(info.total_token_usage)) {
+    throw new Error(
+      `Codex token_count has invalid total_token_usage: ${filePath}`,
+    );
+  }
+  return requiredTokenCount(
+    info.total_token_usage.total_tokens,
+    'total_token_usage.total_tokens',
+    filePath,
+  );
 }
 
 function addLastTokenUsage(
