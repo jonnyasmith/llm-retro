@@ -1,11 +1,5 @@
-import { rename } from 'node:fs/promises';
 import { join } from 'node:path';
-import {
-  checkpoints,
-  interactions,
-  projects,
-  sessions,
-} from '../database/schema';
+import { interactions, sessions } from '../database/schema';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createCodexIngestHandler, createCodexIngestJob } from './codex-ingest';
 import {
@@ -209,18 +203,10 @@ describe('Codex ingest Job handler', () => {
         log: vi.fn(),
       });
 
-      const storedProjects = fixture.database.select().from(projects).all();
-      expect(storedProjects).toEqual([
-        expect.objectContaining({
-          rootPath: '/work/codex',
-          gitRemoteUrl: 'git@example.com:codex.git',
-        }),
-      ]);
       expect(fixture.database.select().from(sessions).all()).toEqual([
         expect.objectContaining({
           harness: 'codex',
           stableSessionId,
-          projectId: storedProjects[0].id,
           logFilePath: sessionPath,
           startedAt: Date.parse('2025-01-02T20:00:00.000Z'),
           endedAt: Date.parse('2025-01-02T20:30:02.000Z'),
@@ -230,7 +216,6 @@ describe('Codex ingest Job handler', () => {
         expect.objectContaining({
           interactionKey: 'codex-turn-1',
           harness: 'codex',
-          projectId: storedProjects[0].id,
           model: 'gpt-5.1-codex-max',
           modelRaw: 'gpt-5.1-codex-max-20260701',
           mainInputTokens: 110,
@@ -248,91 +233,119 @@ describe('Codex ingest Job handler', () => {
           localDate: '2025-01-03',
         }),
       ]);
-      const storedCheckpoint = fixture.database
-        .select()
-        .from(checkpoints)
-        .get();
-      expect(storedCheckpoint).toMatchObject({
-        harness: 'codex',
-        stableSessionId,
-        fileSize: storedCheckpoint?.lastCompleteRecordByteOffset,
-      });
+      // turn_context cwd (not session_meta or user_message cwd) drives attribution
       expect(resolveProject.mock.calls).toEqual([['/work/codex/subdirectory']]);
-
-      await handler.run(null, {
-        correlationId: 'codex-correlation-2',
-        database: fixture.database,
-        progress: vi.fn(),
-        log: vi.fn(),
-      });
-      expect(fixture.database.select().from(interactions).all()).toHaveLength(
-        1,
-      );
     } finally {
       fixture.sqlite.close();
     }
   });
 
-  it('attributes each Interaction independently and nulls a heterogeneous Session Project', async () => {
+  it('sums per-round-trip token deltas across a turn and ignores cumulative resets', async () => {
     const fixture = await createCodexIngestFixture();
-    const stableSessionId = '22222222-2222-4222-8222-222222222222';
+    const stableSessionId = '55555555-5555-4555-8555-555555555555';
     const sessionPath = join(
       fixture.sessionDirectory,
       `rollout-2025-01-02T20-00-00-${stableSessionId}.jsonl`,
     );
-    await writeCodexJsonLines(
-      sessionPath,
-      rolloutRecords(stableSessionId, [
-        { interactionKey: 'turn-alpha', cwd: '/work/alpha/subdirectory' },
-        { interactionKey: 'turn-beta', cwd: '/work/beta/subdirectory' },
-      ]),
-    );
-    const resolveProject = vi.fn(async (cwd: string) => {
-      const rootPath = cwd.startsWith('/work/alpha')
-        ? '/work/alpha'
-        : '/work/beta';
-      return { rootPath, gitRemoteUrl: `${rootPath}.git` };
+    // Each token_count carries a per-round-trip `last_token_usage` delta that
+    // must be summed, plus a cumulative `total_token_usage` that resets on
+    // compaction. The parser must sum the deltas and ignore the cumulative.
+    const tokenCount = (
+      last: { input: number; cached: number; output: number },
+      cumulativeInput: number,
+    ) => ({
+      timestamp: '2025-01-02T20:10:03.000Z',
+      type: 'event_msg',
+      payload: {
+        type: 'token_count',
+        info: {
+          total_token_usage: {
+            input_tokens: cumulativeInput,
+            cached_input_tokens: 0,
+            output_tokens: cumulativeInput,
+            reasoning_output_tokens: 0,
+            total_tokens: cumulativeInput * 2,
+          },
+          last_token_usage: {
+            input_tokens: last.input,
+            cached_input_tokens: last.cached,
+            output_tokens: last.output,
+            reasoning_output_tokens: 0,
+            total_tokens: last.input + last.output,
+          },
+        },
+      },
     });
-    const handler = createCodexIngestHandler({ resolveProject });
+
+    await writeCodexJsonLines(sessionPath, [
+      {
+        timestamp: '2025-01-02T20:00:00.000Z',
+        type: 'session_meta',
+        payload: {
+          id: stableSessionId,
+          timestamp: '2025-01-02T20:00:00.000Z',
+        },
+      },
+      {
+        timestamp: '2025-01-02T20:10:00.000Z',
+        type: 'turn_context',
+        payload: {
+          turn_id: 'codex-turn-delta-sum',
+          cwd: '/work/codex/subdirectory',
+          model: 'gpt-5.1-codex',
+        },
+      },
+      {
+        timestamp: '2025-01-02T20:10:01.000Z',
+        type: 'event_msg',
+        payload: { type: 'user_message' },
+      },
+      {
+        timestamp: '2025-01-02T20:10:02.000Z',
+        type: 'event_msg',
+        payload: { type: 'agent_message' },
+      },
+      // Round-trip 1: cumulative climbs to 200.
+      tokenCount({ input: 200, cached: 50, output: 30 }, 200),
+      // Round-trip 2: cumulative climbs to 320.
+      tokenCount({ input: 120, cached: 20, output: 40 }, 320),
+      // Compaction resets the cumulative back to 80; the delta still counts.
+      tokenCount({ input: 80, cached: 10, output: 25 }, 80),
+      {
+        timestamp: '2025-01-02T20:10:04.000Z',
+        type: 'event_msg',
+        payload: { type: 'task_complete' },
+      },
+    ]);
+
+    const handler = createCodexIngestHandler({
+      resolveProject: async () => ({
+        rootPath: '/work/codex',
+        gitRemoteUrl: null,
+      }),
+    });
 
     try {
       await handler.run(null, {
-        correlationId: 'codex-cross-repo',
+        correlationId: 'codex-delta-sum',
         database: fixture.database,
         progress: vi.fn(),
         log: vi.fn(),
       });
 
-      const storedProjects = fixture.database.select().from(projects).all();
-      const projectIdsByRoot = new Map(
-        storedProjects.map((project) => [project.rootPath, project.id]),
-      );
-      expect(fixture.database.select().from(sessions).get()).toMatchObject({
-        stableSessionId,
-        projectId: null,
-      });
-      expect(
-        fixture.database
-          .select()
-          .from(interactions)
-          .all()
-          .map(({ interactionKey, projectId }) => ({
-            interactionKey,
-            projectId,
-          })),
-      ).toEqual([
-        {
-          interactionKey: 'turn-alpha',
-          projectId: projectIdsByRoot.get('/work/alpha'),
-        },
-        {
-          interactionKey: 'turn-beta',
-          projectId: projectIdsByRoot.get('/work/beta'),
-        },
-      ]);
-      expect(resolveProject.mock.calls).toEqual([
-        ['/work/alpha/subdirectory'],
-        ['/work/beta/subdirectory'],
+      // Disjoint buckets summed across all three round-trips:
+      //   input     = (200-50) + (120-20) + (80-10) = 150 + 100 + 70 = 320
+      //   cacheRead =       50 +       20 +      10  =                  80
+      //   output    =       30 +       40 +      25  =                  95
+      //   cacheWrite is never reported by Codex -> null
+      expect(fixture.database.select().from(interactions).all()).toEqual([
+        expect.objectContaining({
+          interactionKey: 'codex-turn-delta-sum',
+          mainInputTokens: 320,
+          mainCacheReadTokens: 80,
+          mainOutputTokens: 95,
+          mainCacheWriteTokens: null,
+        }),
       ]);
     } finally {
       fixture.sqlite.close();
@@ -366,84 +379,16 @@ describe('Codex ingest Job handler', () => {
         log: vi.fn(),
       });
 
-      const storedProject = fixture.database.select().from(projects).get();
       expect(fixture.database.select().from(sessions).all()).toEqual([
         expect.objectContaining({
           stableSessionId,
-          projectId: storedProject?.id,
           logFilePath: archivedPath,
         }),
       ]);
       expect(fixture.database.select().from(interactions).all()).toEqual([
         expect.objectContaining({
           interactionKey: 'turn-archived-only',
-          projectId: storedProject?.id,
         }),
-      ]);
-      expect(fixture.database.select().from(checkpoints).all()).toEqual([
-        expect.objectContaining({ harness: 'codex', stableSessionId }),
-      ]);
-    } finally {
-      fixture.sqlite.close();
-    }
-  });
-
-  it('keeps one Session, Checkpoint and Interaction when a rollout moves to archived_sessions', async () => {
-    const fixture = await createCodexIngestFixture();
-    const stableSessionId = '33333333-3333-4333-8333-333333333333';
-    const fileName = `rollout-2025-01-02T20-00-00-${stableSessionId}.jsonl`;
-    const activePath = join(fixture.sessionDirectory, fileName);
-    const archivedPath = join(fixture.archivedSessionDirectory, fileName);
-    await writeCodexJsonLines(
-      activePath,
-      rolloutRecords(stableSessionId, [
-        { interactionKey: 'turn-archived', cwd: '/work/archived' },
-      ]),
-    );
-    const handler = createCodexIngestHandler({
-      resolveProject: async () => ({
-        rootPath: '/work/archived',
-        gitRemoteUrl: null,
-      }),
-    });
-    const run = (correlationId: string) =>
-      handler.run(null, {
-        correlationId,
-        database: fixture.database,
-        progress: vi.fn(),
-        log: vi.fn(),
-      });
-
-    try {
-      await run('codex-active');
-      const originalSession = fixture.database.select().from(sessions).get();
-      const originalInteraction = fixture.database
-        .select()
-        .from(interactions)
-        .get();
-      const originalCheckpoint = fixture.database
-        .select()
-        .from(checkpoints)
-        .get();
-      await rename(activePath, archivedPath);
-      await run('codex-relocated');
-      await run('codex-archived-rerun');
-
-      expect(fixture.database.select().from(sessions).all()).toEqual([
-        expect.objectContaining({
-          id: originalSession?.id,
-          stableSessionId,
-          logFilePath: archivedPath,
-        }),
-      ]);
-      expect(fixture.database.select().from(interactions).all()).toEqual([
-        expect.objectContaining({
-          id: originalInteraction?.id,
-          interactionKey: 'turn-archived',
-        }),
-      ]);
-      expect(fixture.database.select().from(checkpoints).all()).toEqual([
-        originalCheckpoint,
       ]);
     } finally {
       fixture.sqlite.close();

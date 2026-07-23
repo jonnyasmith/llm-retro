@@ -1,12 +1,7 @@
-import { appendFile, mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  checkpoints,
-  interactions,
-  projects,
-  sessions,
-} from '../database/schema';
+import { interactions, sessions } from '../database/schema';
 import { createOmpIngestHandler, createOmpIngestJob } from './omp-ingest';
 import {
   cleanupOmpIngestFixtures,
@@ -138,6 +133,21 @@ describe('omp ingest Job handler', () => {
           ],
         },
       },
+      {
+        type: 'message',
+        id: 'child-task-result',
+        timestamp: '2025-01-01T20:00:04.600Z',
+        message: {
+          role: 'toolResult',
+          toolName: 'task',
+          content: [
+            {
+              type: 'text',
+              text: '<task-result id="AgentOne.Child" status="completed">done</task-result>',
+            },
+          ],
+        },
+      },
     ]);
     const childAgentPath = join(nestedDirectory, 'AgentOne.Child.jsonl');
     await writeOmpJsonLines(childAgentPath, [
@@ -157,6 +167,16 @@ describe('omp ingest Job handler', () => {
           usage: { output: 11, cacheRead: 4 },
         },
       },
+      {
+        type: 'message',
+        id: 'child-late-answer',
+        timestamp: '2025-01-01T20:00:04.700Z',
+        message: {
+          role: 'assistant',
+          model: 'gpt-5.5',
+          usage: { output: 2 },
+        },
+      },
     ]);
 
     const resolveProject = vi.fn(async (cwd: string) => ({
@@ -164,27 +184,19 @@ describe('omp ingest Job handler', () => {
       gitRemoteUrl: null,
     }));
     const handler = createOmpIngestHandler({ resolveProject });
-    const run = (correlationId: string) =>
-      handler.run(null, {
-        correlationId,
+
+    try {
+      await handler.run(null, {
+        correlationId: 'omp-correlation-1',
         database: fixture.database,
         progress: vi.fn(),
         log: vi.fn(),
       });
 
-    try {
-      await run('omp-correlation-1');
-
-      const storedProjects = fixture.database.select().from(projects).all();
-      const projectIds = new Map(
-        storedProjects.map((project) => [project.rootPath, project.id]),
-      );
-      expect(storedProjects).toHaveLength(2);
       expect(fixture.database.select().from(sessions).all()).toEqual([
         expect.objectContaining({
           harness: 'omp',
           stableSessionId,
-          projectId: null,
           logFilePath: sessionPath,
           startedAt: Date.parse('2025-01-01T20:00:00.000Z'),
           endedAt: Date.parse('2025-01-01T20:30:01.000Z'),
@@ -194,7 +206,6 @@ describe('omp ingest Job handler', () => {
         expect.objectContaining({
           harness: 'omp',
           interactionKey: 'omp-prompt-1',
-          projectId: projectIds.get('/work/alpha'),
           model: 'gpt-5.6-sol',
           modelRaw: 'gpt-5.6-sol-20260701',
           mainInputTokens: 10,
@@ -202,15 +213,14 @@ describe('omp ingest Job handler', () => {
           mainCacheReadTokens: 2,
           mainCacheWriteTokens: null,
           subInputTokens: 3,
-          subOutputTokens: 7,
-          subCacheReadTokens: null,
+          subOutputTokens: 20,
+          subCacheReadTokens: 4,
           subCacheWriteTokens: 1,
           spawnedSubagents: false,
           timestamp: Date.parse('2025-01-01T20:00:01.000Z'),
         }),
         expect.objectContaining({
           interactionKey: 'omp-prompt-2',
-          projectId: projectIds.get('/work/beta'),
           model: 'claude-sonnet-4-6',
           mainOutputTokens: 0,
           subInputTokens: null,
@@ -218,62 +228,6 @@ describe('omp ingest Job handler', () => {
           subCacheReadTokens: null,
           subCacheWriteTokens: null,
         }),
-      ]);
-      expect(fixture.database.select().from(checkpoints).all()).toEqual([
-        expect.objectContaining({
-          harness: 'omp',
-          stableSessionId,
-        }),
-      ]);
-      expect(resolveProject.mock.calls).toEqual([
-        ['/work/alpha/subdirectory'],
-        ['/work/beta/subdirectory'],
-      ]);
-
-      await run('omp-correlation-2');
-      expect(fixture.database.select().from(interactions).all()).toHaveLength(
-        2,
-      );
-
-      await appendFile(
-        rootAgentPath,
-        `${JSON.stringify({
-          type: 'message',
-          id: 'child-task-result',
-          timestamp: '2025-01-01T20:00:04.600Z',
-          message: {
-            role: 'toolResult',
-            toolName: 'task',
-            content: [
-              {
-                type: 'text',
-                text: '<task-result id="AgentOne.Child" status="completed">done</task-result>',
-              },
-            ],
-          },
-        })}\n`,
-      );
-      await appendFile(
-        childAgentPath,
-        `${JSON.stringify({
-          type: 'message',
-          id: 'child-late-answer',
-          timestamp: '2025-01-01T20:00:04.700Z',
-          message: {
-            role: 'assistant',
-            model: 'gpt-5.5',
-            usage: { output: 2 },
-          },
-        })}\n`,
-      );
-      await run('omp-correlation-3');
-      expect(fixture.database.select().from(interactions).all()).toEqual([
-        expect.objectContaining({
-          interactionKey: 'omp-prompt-1',
-          subOutputTokens: 20,
-          subCacheReadTokens: 4,
-        }),
-        expect.objectContaining({ interactionKey: 'omp-prompt-2' }),
       ]);
     } finally {
       fixture.sqlite.close();

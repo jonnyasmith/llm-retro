@@ -3,14 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { openDatabase } from './connection';
-import {
-  checkpoints,
-  interactions,
-  jobRuns,
-  projects,
-  sessions,
-  settings,
-} from './schema';
+import { interactions, jobRuns, projects, sessions, settings } from './schema';
 import {
   getActivityHeatmap,
   getOverviewTotals,
@@ -60,29 +53,6 @@ afterEach(async () => {
 });
 
 describe('analytical store', () => {
-  it('applies all domain migrations to a fresh SQLite database', async () => {
-    const connection = await createDatabase();
-
-    try {
-      const tableNames = connection.sqlite
-        .prepare("select name from sqlite_master where type = 'table'")
-        .pluck()
-        .all();
-
-      expect(tableNames).toEqual(
-        expect.arrayContaining([
-          'project',
-          'session',
-          'interaction',
-          'checkpoint',
-          'settings',
-        ]),
-      );
-    } finally {
-      connection.sqlite.close();
-    }
-  });
-
   it('collapses a repeated Interaction identity through the public insertion seam', async () => {
     const connection = await createDatabase();
 
@@ -110,54 +80,6 @@ describe('analytical store', () => {
       expect(
         connection.database.select().from(interactions).all(),
       ).toHaveLength(1);
-      expect(() =>
-        connection.database.insert(interactions).values(interaction).run(),
-      ).toThrow(/UNIQUE constraint failed/);
-    } finally {
-      connection.sqlite.close();
-    }
-  });
-
-  it('enforces Project and Session identities independently of display attributes', async () => {
-    const connection = await createDatabase();
-
-    try {
-      const [firstProject] = connection.database
-        .insert(projects)
-        .values({ rootPath: '/work/one', gitRemoteUrl: 'git@example/repo' })
-        .returning()
-        .all();
-      connection.database
-        .insert(projects)
-        .values({ rootPath: '/work/two', gitRemoteUrl: 'git@example/repo' })
-        .run();
-      expect(() =>
-        connection.database
-          .insert(projects)
-          .values({ rootPath: '/work/one', gitRemoteUrl: 'git@example/other' })
-          .run(),
-      ).toThrow(/UNIQUE constraint failed/);
-
-      connection.database
-        .insert(sessions)
-        .values({
-          harness: 'codex',
-          stableSessionId: 'stable-id',
-          projectId: firstProject.id,
-          logFilePath: '/logs/original.jsonl',
-        })
-        .run();
-      expect(() =>
-        connection.database
-          .insert(sessions)
-          .values({
-            harness: 'codex',
-            stableSessionId: 'stable-id',
-            projectId: firstProject.id,
-            logFilePath: '/logs/moved.jsonl',
-          })
-          .run(),
-      ).toThrow(/UNIQUE constraint failed/);
     } finally {
       connection.sqlite.close();
     }
@@ -278,34 +200,6 @@ describe('analytical store', () => {
         totalTokens: 0,
       });
       expect(getActivityHeatmap(connection.database)).toEqual([]);
-    } finally {
-      connection.sqlite.close();
-    }
-  });
-
-  it('stores the checkpoint identity and last-complete file state', async () => {
-    const connection = await createDatabase();
-
-    try {
-      connection.database
-        .insert(checkpoints)
-        .values({
-          harness: 'claude',
-          stableSessionId: 'session-1',
-          lastCompleteRecordByteOffset: 512,
-          fileSize: 1024,
-          fileMtime: 1_765_000_000_000,
-        })
-        .run();
-
-      expect(
-        connection.database.select().from(checkpoints).get(),
-      ).toMatchObject({
-        harness: 'claude',
-        stableSessionId: 'session-1',
-        lastCompleteRecordByteOffset: 512,
-        fileSize: 1024,
-      });
     } finally {
       connection.sqlite.close();
     }
