@@ -1,5 +1,5 @@
 import { readdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import {
   findCodexTurnContextByteOffset,
   readCodexSession,
@@ -44,12 +44,14 @@ const codexIngestAdapter: IngestAdapter<CodexSessionMetadata> = {
 };
 
 async function enumerateCodexSourceFileGroups(logSources: string[]) {
-  return (await discoverActiveSessionFiles(logSources)).map(
-    (primaryFilePath) => ({
-      primaryFilePath,
-      auxiliaryFilePaths: [],
-    }),
-  );
+  const filePathsByName = new Map<string, string>();
+  for (const primaryFilePath of await discoverSessionFiles(logSources)) {
+    filePathsByName.set(basename(primaryFilePath), primaryFilePath);
+  }
+  return [...filePathsByName.values()].sort().map((primaryFilePath) => ({
+    primaryFilePath,
+    auxiliaryFilePaths: [],
+  }));
 }
 
 function parseCodexSessionSlice({
@@ -76,14 +78,12 @@ function parseCodexSessionSlice({
   };
 }
 
-async function discoverActiveSessionFiles(
-  logSources: string[],
-): Promise<string[]> {
+async function discoverSessionFiles(logSources: string[]): Promise<string[]> {
   const paths: string[] = [];
   for (const logSource of logSources) {
-    let years;
+    let entries;
     try {
-      years = await readdir(logSource, { withFileTypes: true });
+      entries = await readdir(logSource, { withFileTypes: true });
     } catch (cause) {
       if (
         typeof cause === 'object' &&
@@ -95,9 +95,13 @@ async function discoverActiveSessionFiles(
       }
       throw cause;
     }
-    for (const year of years) {
-      if (!year.isDirectory()) continue;
-      const yearPath = join(logSource, year.name);
+    for (const entry of entries) {
+      if (entry.isFile() && entry.name.endsWith('.jsonl')) {
+        paths.push(join(logSource, entry.name));
+        continue;
+      }
+      if (!entry.isDirectory()) continue;
+      const yearPath = join(logSource, entry.name);
       for (const month of await readdir(yearPath, { withFileTypes: true })) {
         if (!month.isDirectory()) continue;
         const monthPath = join(yearPath, month.name);

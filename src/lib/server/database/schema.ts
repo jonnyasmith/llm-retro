@@ -23,9 +23,7 @@ export const sessions = sqliteTable(
     id: integer('id').primaryKey({ autoIncrement: true }),
     harness: text('harness').notNull(),
     stableSessionId: text('stable_session_id').notNull(),
-    projectId: integer('project_id')
-      .notNull()
-      .references(() => projects.id),
+    projectId: integer('project_id').references(() => projects.id),
     logFilePath: text('log_file_path').notNull(),
     startedAt: integer('started_at'),
     endedAt: integer('ended_at'),

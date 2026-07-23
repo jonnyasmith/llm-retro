@@ -108,7 +108,6 @@ function toNormalisedSession(
   session: NormalisedClaudeSession,
 ): NormalisedSession {
   return {
-    cwd: session.cwd,
     startedAt: session.startedAt,
     endedAt: session.endedAt,
     interactions: session.interactions.map((interaction) => ({

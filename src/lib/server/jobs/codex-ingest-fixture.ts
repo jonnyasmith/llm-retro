@@ -10,15 +10,27 @@ export async function createCodexIngestFixture() {
   const root = await mkdtemp(join(tmpdir(), 'llm-retro-codex-ingest-'));
   temporaryDirectories.push(root);
   const dataDirectory = join(root, 'data');
-  const logSource = join(root, 'codex-sessions');
+  const sessionsRoot = join(root, 'codex');
+  const logSource = join(sessionsRoot, 'sessions');
+  const archivedSessionDirectory = join(sessionsRoot, 'archived_sessions');
   const sessionDirectory = join(logSource, '2025', '01', '02');
-  await mkdir(sessionDirectory, { recursive: true });
+  await Promise.all([
+    mkdir(sessionDirectory, { recursive: true }),
+    mkdir(archivedSessionDirectory, { recursive: true }),
+  ]);
   const connection = openDatabase({ LLM_RETRO_DATA_DIR: dataDirectory });
   updateSettings(connection.database, {
     timezone: 'Asia/Kolkata',
-    logSourceOverrides: { codex: [logSource] },
+    logSourceOverrides: {
+      codex: [logSource, archivedSessionDirectory],
+    },
   });
-  return { ...connection, logSource, sessionDirectory };
+  return {
+    ...connection,
+    logSource,
+    archivedSessionDirectory,
+    sessionDirectory,
+  };
 }
 
 export async function writeCodexJsonLines(path: string, records: unknown[]) {

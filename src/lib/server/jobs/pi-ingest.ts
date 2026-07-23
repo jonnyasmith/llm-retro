@@ -81,7 +81,6 @@ function parsePiSessionSlice({
   }
   return {
     session: {
-      cwd: parsed.cwd,
       startedAt: parsed.startedAt,
       endedAt: parsed.endedAt,
       interactions: parsed.interactions,

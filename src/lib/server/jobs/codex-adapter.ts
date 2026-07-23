@@ -23,7 +23,6 @@ export interface CodexSessionMetadata {
 }
 
 export interface NormalisedCodexSession {
-  cwd: string;
   startedAt: number | null;
   endedAt: number | null;
   interactions: NormalisedInteraction[];
@@ -128,7 +127,7 @@ export function readCodexSession(
 
   const cwd = interactions[0]?.cwd ?? firstTurnCwd;
   if (cwd === null) return null;
-  return { cwd, startedAt, endedAt, interactions };
+  return { startedAt, endedAt, interactions };
 }
 
 export function findCodexTurnContextByteOffset(

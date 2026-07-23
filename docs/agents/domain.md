@@ -9,7 +9,7 @@ A coding tool that drives an LLM and writes its own session logs — currently C
 _Avoid_: Agent, tool, client, CLI.
 
 **Session**:
-One run of a single Harness, corresponding to one log file. A grouping dimension above Interaction; the count of Sessions is itself a metric of interest. A Session usually sits in one Project, but need not — some Harnesses change working directory mid-run, so a Session may span Projects, and Project attribution is authoritative at the Interaction, not the Session. The backing log file may also move on disk (e.g. archived) without changing the Session's identity.
+One run of a single Harness, corresponding to one log file. A grouping dimension above Interaction; the count of Sessions is itself a metric of interest. The backing log file may move on disk (for example, a completed Codex rollout moves into `archived_sessions`) without changing the Session or Checkpoint identity. `session.projectId` is nullable and derived from the Session's Interactions: it is their sole common Project only when every Interaction agrees, otherwise null means "heterogeneous — see the Interactions". Project attribution is authoritative at the Interaction, not the Session.
 _Avoid_: Conversation, thread, chat, rollout.
 
 **Interaction**:

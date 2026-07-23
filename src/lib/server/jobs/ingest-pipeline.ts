@@ -44,7 +44,6 @@ export interface NormalisedInteraction {
 }
 
 export interface NormalisedSession {
-  cwd: string | null;
   startedAt: number | null;
   endedAt: number | null;
   interactions: NormalisedInteraction[];
@@ -181,7 +180,11 @@ export function createIngestHandler<Metadata>(
         const metadataMatches =
           storedCheckpoint?.fileSize === primarySnapshot.fileSize &&
           storedCheckpoint.fileMtime === primarySnapshot.fileMtime;
-        if (metadataMatches && auxiliarySnapshots.length === 0) {
+        if (
+          metadataMatches &&
+          auxiliarySnapshots.length === 0 &&
+          existingSession?.logFilePath === filePath
+        ) {
           context.log(`Skipped unchanged ${filePath}`);
           context.progress({
             filesTotal: sourceFileGroups.length,
@@ -215,12 +218,6 @@ export function createIngestHandler<Metadata>(
           parsed.session?.interactions.map((interaction) => interaction.cwd) ??
             [],
         );
-        if (
-          (!existingSession || startByteOffset === 0) &&
-          parsed.session?.cwd
-        ) {
-          cwds.add(parsed.session.cwd);
-        }
         for (const cwd of cwds) {
           if (!resolvedProjects.has(cwd)) {
             resolvedProjects.set(cwd, await resolveProject(cwd));
@@ -384,9 +381,6 @@ function storeSessionSlice<Metadata>(
     const sessionCwds = new Set(
       parsed.session?.interactions.map((interaction) => interaction.cwd) ?? [],
     );
-    if ((!existingSession || !resumingPrimary) && parsed.session?.cwd) {
-      sessionCwds.add(parsed.session.cwd);
-    }
     for (const cwd of sessionCwds) {
       const resolvedProject = resolvedProjects.get(cwd);
       if (!resolvedProject) {
@@ -412,17 +406,6 @@ function storeSessionSlice<Metadata>(
     }
 
     if (parsed.session) {
-      const sessionProjectId =
-        resumingPrimary && existingSession
-          ? existingSession.projectId
-          : parsed.session.cwd === null
-            ? undefined
-            : projectIds.get(parsed.session.cwd);
-      if (sessionProjectId === undefined) {
-        throw new Error(
-          `Session Project was not stored: ${parsed.session.cwd}`,
-        );
-      }
       const startedAt = resumingPrimary
         ? minimumTimestamp(
             existingSession?.startedAt ?? null,
@@ -440,15 +423,21 @@ function storeSessionSlice<Metadata>(
         .values({
           harness: adapter.harness,
           stableSessionId,
-          projectId: sessionProjectId,
+          projectId: existingSession?.projectId ?? null,
           logFilePath,
           startedAt,
           endedAt,
         })
         .onConflictDoUpdate({
           target: [sessions.harness, sessions.stableSessionId],
-          set: { projectId: sessionProjectId, logFilePath, startedAt, endedAt },
+          set: { logFilePath, startedAt, endedAt },
         })
+        .run();
+    } else if (existingSession && existingSession.logFilePath !== logFilePath) {
+      transaction
+        .update(sessions)
+        .set({ logFilePath })
+        .where(eq(sessions.id, existingSession.id))
         .run();
     }
 
@@ -533,6 +522,27 @@ function storeSessionSlice<Metadata>(
               eq(interactions.interactionKey, update.interactionKey),
             ),
           )
+          .run();
+      }
+
+      if (parsed.session) {
+        const interactionProjects = transaction
+          .select({ projectId: interactions.projectId })
+          .from(interactions)
+          .where(eq(interactions.sessionId, session.id))
+          .all();
+        const firstProjectId = interactionProjects[0]?.projectId;
+        const sessionProjectId =
+          firstProjectId !== undefined &&
+          interactionProjects.every(
+            (interaction) => interaction.projectId === firstProjectId,
+          )
+            ? firstProjectId
+            : null;
+        transaction
+          .update(sessions)
+          .set({ projectId: sessionProjectId })
+          .where(eq(sessions.id, session.id))
           .run();
       }
     }
