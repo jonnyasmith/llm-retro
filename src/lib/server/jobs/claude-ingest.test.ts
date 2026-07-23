@@ -206,7 +206,7 @@ describe('Claude ingest Job handler', () => {
       ]);
       expect(fixture.database.select().from(interactions).all()).toEqual([
         expect.objectContaining({
-          openingUserRecordId: 'prompt-1',
+          interactionKey: 'prompt-1',
           harness: 'claude',
           model: 'claude-opus-4-8',
           modelRaw: 'claude-opus-4-8[1m]',
@@ -220,7 +220,7 @@ describe('Claude ingest Job handler', () => {
           localDate: '2025-01-02',
         }),
         expect.objectContaining({
-          openingUserRecordId: 'prompt-2',
+          interactionKey: 'prompt-2',
           model: 'claude-sonnet-4-6',
           modelRaw: 'claude-sonnet-4-6-20260217',
           mainInputTokens: 0,
@@ -256,7 +256,7 @@ describe('Claude ingest Job handler', () => {
           localHour: 0,
           localDate: '1970-01-01',
         })
-        .where(eq(interactions.openingUserRecordId, 'prompt-1'))
+        .where(eq(interactions.interactionKey, 'prompt-1'))
         .run();
       fixture.database.delete(checkpoints).run();
 
@@ -274,7 +274,7 @@ describe('Claude ingest Job handler', () => {
       const refreshed = fixture.database
         .select()
         .from(interactions)
-        .where(eq(interactions.openingUserRecordId, 'prompt-1'))
+        .where(eq(interactions.interactionKey, 'prompt-1'))
         .get();
       const refreshedSession = fixture.database
         .select()

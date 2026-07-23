@@ -1,5 +1,5 @@
 <script lang="ts">
-  import ClaudeIngestJob from '$lib/components/ClaudeIngestJob.svelte';
+  import IngestJob from '$lib/components/IngestJob.svelte';
   import JobRunHistory from '$lib/components/JobRunHistory.svelte';
   import PageIntro from '$lib/components/PageIntro.svelte';
   import type { PageProps } from './$types';
@@ -11,7 +11,7 @@
   <title>Jobs · LLM Retro</title>
   <meta
     name="description"
-    content="Run Claude ingestion and watch its progress and history."
+    content="Run Claude and pi ingestion and watch progress and history."
   />
 </svelte:head>
 
@@ -19,14 +19,21 @@
   <PageIntro
     eyebrow="Local-first work tracking"
     title="Jobs"
-    description="Bring your Claude activity into LLM Retro and watch every run from start to finish."
+    description="Bring Claude and pi activity into LLM Retro and watch every run from start to finish."
   />
 
-  <ClaudeIngestJob
-    runs={data.runs}
-    activeCorrelationId={data.activeCorrelationId}
+  <IngestJob
+    harness="claude"
+    runs={data.claudeRuns}
+    activeCorrelationId={data.claudeActiveCorrelationId}
   />
-  <JobRunHistory runs={data.runs} />
+  <IngestJob
+    harness="pi"
+    runs={data.piRuns}
+    activeCorrelationId={data.piActiveCorrelationId}
+  />
+  <JobRunHistory harness="claude" runs={data.claudeRuns} />
+  <JobRunHistory harness="pi" runs={data.piRuns} />
 </main>
 
 <style>

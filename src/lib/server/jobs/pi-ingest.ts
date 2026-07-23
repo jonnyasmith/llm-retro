@@ -1,5 +1,13 @@
-import { mkdir, open, readdir, rename, rm, stat } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
+import {
+  mkdir,
+  open,
+  readdir,
+  rename,
+  rm,
+  stat,
+  type FileHandle,
+} from 'node:fs/promises';
 import { basename, dirname, join, parse, relative, resolve } from 'node:path';
 import { and, eq } from 'drizzle-orm';
 import type { Database } from '../database/connection';
@@ -12,13 +20,11 @@ import {
 import { getSettings } from '../database/store';
 import { deriveLocalBuckets } from '../database/time-buckets';
 import {
-  findClaudeInteractionContextByteOffset,
-  readClaudeSession,
-  readClaudeSubTokenUpdates,
-  type ClaudeSourceContents,
-  type ClaudeSubTokenUpdate,
-  type NormalisedClaudeSession,
-} from './claude-adapter';
+  findPiInteractionContextByteOffset,
+  readPiSession,
+  readPiSessionMetadata,
+  type NormalisedPiSession,
+} from './pi-adapter';
 import {
   resolveGitProject,
   type CwdProjectResolver,
@@ -35,14 +41,14 @@ export {
 
 type ArchivedFileRename = (oldPath: string, newPath: string) => Promise<void>;
 
-export function createClaudeIngestJob(): Job<null> {
+export function createPiIngestJob(): Job<null> {
   return {
-    identity: { type: 'ingest', scope: 'claude' },
+    identity: { type: 'ingest', scope: 'pi' },
     payload: null,
   };
 }
 
-export function createClaudeIngestHandler(
+export function createPiIngestHandler(
   options: {
     resolveProject?: CwdProjectResolver;
     renameArchivedFile?: ArchivedFileRename;
@@ -58,10 +64,10 @@ export function createClaudeIngestHandler(
         settings.rawArchiveEnabled,
         settings.rawArchivePath,
       );
-      const filePaths = await discoverSessionFiles(settings.logSources.claude);
+      const filePaths = await discoverSessionFiles(settings.logSources.pi);
       const resolvedProjects = new Map<string, ResolvedProject>();
       context.progress({ filesTotal: filePaths.length, filesDone: 0 });
-      context.log(`Found ${filePaths.length} Claude session files`);
+      context.log(`Found ${filePaths.length} pi session files`);
 
       for (const [index, filePath] of filePaths.entries()) {
         context.progress({
@@ -70,15 +76,11 @@ export function createClaudeIngestHandler(
           currentFile: filePath,
         });
         context.log(`Reading ${filePath}`);
-        const stableSessionId = basename(filePath, '.jsonl');
         const snapshot = await readStableSourceFile(filePath);
-        const subagentSnapshots = await Promise.all(
-          (await discoverSubagentFiles(filePath)).map(readStableSourceFile),
-        );
+        const metadata = readPiSessionMetadata(filePath, snapshot.contents);
+        const stableSessionId = metadata.stableSessionId;
         if (archiveRoot !== null) {
-          for (const source of [snapshot, ...subagentSnapshots]) {
-            await archiveSourceFile(archiveRoot, source, renameArchivedFile);
-          }
+          await archiveSourceFile(archiveRoot, snapshot, renameArchivedFile);
         }
         const completeByteOffset = snapshot.contents.lastIndexOf(10) + 1;
         const storedCheckpoint = context.database
@@ -86,7 +88,7 @@ export function createClaudeIngestHandler(
           .from(checkpoints)
           .where(
             and(
-              eq(checkpoints.harness, 'claude'),
+              eq(checkpoints.harness, 'pi'),
               eq(checkpoints.stableSessionId, stableSessionId),
             ),
           )
@@ -96,7 +98,7 @@ export function createClaudeIngestHandler(
           .from(sessions)
           .where(
             and(
-              eq(sessions.harness, 'claude'),
+              eq(sessions.harness, 'pi'),
               eq(sessions.stableSessionId, stableSessionId),
             ),
           )
@@ -104,8 +106,7 @@ export function createClaudeIngestHandler(
         const metadataMatches =
           storedCheckpoint?.fileSize === snapshot.fileSize &&
           storedCheckpoint.fileMtime === snapshot.fileMtime;
-        const hasSubagentFiles = subagentSnapshots.length > 0;
-        if (metadataMatches && !hasSubagentFiles) {
+        if (metadataMatches) {
           context.log(`Skipped unchanged ${filePath}`);
           context.progress({
             filesTotal: filePaths.length,
@@ -118,50 +119,33 @@ export function createClaudeIngestHandler(
           storedCheckpoint !== undefined &&
           snapshot.fileSize > storedCheckpoint.fileSize &&
           storedCheckpoint.lastCompleteRecordByteOffset <= completeByteOffset;
-        const startByteOffset = metadataMatches
-          ? completeByteOffset
-          : canResumeGrowth
-            ? storedCheckpoint.lastCompleteRecordByteOffset
-            : 0;
-        const primaryContents = snapshot.contents
-          .subarray(startByteOffset, completeByteOffset)
-          .toString('utf8');
-        const subagentFiles = subagentSnapshots.map(toSourceContents);
-        let parsed =
-          primaryContents.length > 0
-            ? readClaudeSession(filePath, primaryContents, subagentFiles)
-            : null;
-        if (
-          parsed?.requiresInteractionContext === true &&
-          startByteOffset > 0
-        ) {
-          const contextByteOffset = findClaudeInteractionContextByteOffset(
+        const startByteOffset = canResumeGrowth
+          ? storedCheckpoint.lastCompleteRecordByteOffset
+          : 0;
+        let parsed = readPiSession(
+          filePath,
+          snapshot.contents
+            .subarray(startByteOffset, completeByteOffset)
+            .toString('utf8'),
+          metadata,
+        );
+        if (parsed.requiresInteractionContext && startByteOffset > 0) {
+          const contextByteOffset = findPiInteractionContextByteOffset(
             snapshot.contents,
             startByteOffset,
           );
-          parsed = readClaudeSession(
+          parsed = readPiSession(
             filePath,
             snapshot.contents
               .subarray(contextByteOffset, completeByteOffset)
               .toString('utf8'),
-            subagentFiles,
+            metadata,
           );
         }
-        const subTokenUpdates = hasSubagentFiles
-          ? readClaudeSubTokenUpdates(
-              filePath,
-              snapshot.contents
-                .subarray(0, completeByteOffset)
-                .toString('utf8'),
-              subagentFiles,
-            )
-          : [];
-        const cwds = new Set(
-          parsed?.interactions.map((interaction) => interaction.cwd) ?? [],
-        );
-        if ((!existingSession || startByteOffset === 0) && parsed?.cwd) {
-          cwds.add(parsed.cwd);
-        }
+        const cwds = new Set([
+          parsed.cwd,
+          ...parsed.interactions.map((interaction) => interaction.cwd),
+        ]);
         for (const cwd of cwds) {
           if (!resolvedProjects.has(cwd)) {
             resolvedProjects.set(cwd, await resolveProject(cwd));
@@ -173,7 +157,6 @@ export function createClaudeIngestHandler(
           stableSessionId,
           filePath,
           parsed,
-          subTokenUpdates,
           resolvedProjects,
           settings.timezone,
           existingSession,
@@ -225,26 +208,6 @@ async function readStableSourceFile(filePath: string): Promise<SourceSnapshot> {
   }
 }
 
-async function discoverSubagentFiles(sessionFilePath: string) {
-  const directoryPath = join(
-    dirname(sessionFilePath),
-    basename(sessionFilePath, '.jsonl'),
-    'subagents',
-  );
-  let entries;
-  try {
-    entries = await readdir(directoryPath, { withFileTypes: true });
-  } catch (cause) {
-    if (isMissingPath(cause)) return [];
-    throw cause;
-  }
-
-  return entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith('.jsonl'))
-    .sort((left, right) => left.name.localeCompare(right.name))
-    .map((entry) => join(directoryPath, entry.name));
-}
-
 function resolveRawArchiveRoot(
   enabled: boolean,
   configuredPath: string | null,
@@ -279,7 +242,7 @@ async function archiveSourceFile(
     dirname(destination),
     `.${basename(destination)}.${randomUUID()}.tmp`,
   );
-  let temporaryHandle: Awaited<ReturnType<typeof open>> | undefined;
+  let temporaryHandle: FileHandle | undefined;
   try {
     temporaryHandle = await open(temporaryPath, 'wx');
     await temporaryHandle.writeFile(source.contents);
@@ -302,22 +265,14 @@ function rawArchiveDestination(archiveRoot: string, sourcePath: string) {
   const filesystemRoot = parse(absoluteSource).root;
   return join(
     archiveRoot,
-    'claude',
+    'pi',
     Buffer.from(filesystemRoot).toString('base64url'),
     relative(filesystemRoot, absoluteSource),
   );
 }
 
-function toSourceContents(snapshot: SourceSnapshot): ClaudeSourceContents {
-  return {
-    filePath: snapshot.filePath,
-    contents: snapshot.contents.toString('utf8'),
-  };
-}
-
 async function discoverSessionFiles(logSources: string[]): Promise<string[]> {
   const paths: string[] = [];
-
   for (const logSource of logSources) {
     let projectDirectories;
     try {
@@ -326,7 +281,6 @@ async function discoverSessionFiles(logSources: string[]): Promise<string[]> {
       if (isMissingPath(cause)) continue;
       throw cause;
     }
-
     for (const projectDirectory of projectDirectories) {
       if (!projectDirectory.isDirectory()) continue;
       const directoryPath = join(logSource, projectDirectory.name);
@@ -338,7 +292,6 @@ async function discoverSessionFiles(logSources: string[]): Promise<string[]> {
       }
     }
   }
-
   return paths.sort();
 }
 
@@ -355,8 +308,7 @@ function storeSession(
   database: Database,
   stableSessionId: string,
   logFilePath: string,
-  parsed: NormalisedClaudeSession | null,
-  subTokenUpdates: ClaudeSubTokenUpdate[],
+  parsed: NormalisedPiSession,
   resolvedProjects: Map<string, ResolvedProject>,
   timezone: string,
   existingSession: typeof sessions.$inferSelect | undefined,
@@ -369,90 +321,79 @@ function storeSession(
 ): void {
   database.transaction((transaction) => {
     const projectIds = new Map<string, number>();
-    const sessionCwds = new Set(
-      parsed?.interactions.map((interaction) => interaction.cwd) ?? [],
-    );
-    if ((!existingSession || !resumingPrimary) && parsed?.cwd) {
-      sessionCwds.add(parsed.cwd);
-    }
-    for (const cwd of sessionCwds) {
-      const resolved = resolvedProjects.get(cwd);
-      if (!resolved)
+    const cwds = new Set([
+      parsed.cwd,
+      ...parsed.interactions.map((interaction) => interaction.cwd),
+    ]);
+    for (const cwd of cwds) {
+      const resolvedProject = resolvedProjects.get(cwd);
+      if (!resolvedProject) {
         throw new Error(`Project was not resolved for cwd: ${cwd}`);
+      }
       transaction
         .insert(projects)
-        .values(resolved)
+        .values(resolvedProject)
         .onConflictDoUpdate({
           target: projects.rootPath,
-          set: { gitRemoteUrl: resolved.gitRemoteUrl },
+          set: { gitRemoteUrl: resolvedProject.gitRemoteUrl },
         })
         .run();
       const project = transaction
         .select({ id: projects.id })
         .from(projects)
-        .where(eq(projects.rootPath, resolved.rootPath))
+        .where(eq(projects.rootPath, resolvedProject.rootPath))
         .get();
-      if (!project)
-        throw new Error(`Project was not stored: ${resolved.rootPath}`);
+      if (!project) {
+        throw new Error(`Project was not stored: ${resolvedProject.rootPath}`);
+      }
       projectIds.set(cwd, project.id);
     }
-
-    if (parsed) {
-      const sessionProjectId =
-        resumingPrimary && existingSession
-          ? existingSession.projectId
-          : parsed.cwd === null
-            ? undefined
-            : projectIds.get(parsed.cwd);
-      if (sessionProjectId === undefined) {
-        throw new Error(`Session Project was not stored: ${parsed.cwd}`);
-      }
-      const startedAt = resumingPrimary
-        ? minimumTimestamp(existingSession?.startedAt ?? null, parsed.startedAt)
-        : parsed.startedAt;
-      const endedAt = resumingPrimary
-        ? maximumTimestamp(existingSession?.endedAt ?? null, parsed.endedAt)
-        : parsed.endedAt;
-      transaction
-        .insert(sessions)
-        .values({
-          harness: 'claude',
-          stableSessionId,
-          projectId: sessionProjectId,
-          logFilePath,
-          startedAt,
-          endedAt,
-        })
-        .onConflictDoUpdate({
-          target: [sessions.harness, sessions.stableSessionId],
-          set: { projectId: sessionProjectId, logFilePath, startedAt, endedAt },
-        })
-        .run();
+    const sessionProjectId = projectIds.get(parsed.cwd);
+    if (sessionProjectId === undefined) {
+      throw new Error(`Session Project was not stored: ${parsed.cwd}`);
     }
+
+    const startedAt = resumingPrimary
+      ? minimumTimestamp(existingSession?.startedAt ?? null, parsed.startedAt)
+      : parsed.startedAt;
+    const endedAt = resumingPrimary
+      ? maximumTimestamp(existingSession?.endedAt ?? null, parsed.endedAt)
+      : parsed.endedAt;
+    transaction
+      .insert(sessions)
+      .values({
+        harness: 'pi',
+        stableSessionId,
+        projectId: sessionProjectId,
+        logFilePath,
+        startedAt,
+        endedAt,
+      })
+      .onConflictDoUpdate({
+        target: [sessions.harness, sessions.stableSessionId],
+        set: { projectId: sessionProjectId, logFilePath, startedAt, endedAt },
+      })
+      .run();
     const session = transaction
       .select({ id: sessions.id })
       .from(sessions)
       .where(
         and(
-          eq(sessions.harness, 'claude'),
+          eq(sessions.harness, 'pi'),
           eq(sessions.stableSessionId, stableSessionId),
         ),
       )
       .get();
-    if (!session && (parsed || subTokenUpdates.length > 0)) {
-      throw new Error(`Claude Session was not stored: ${stableSessionId}`);
-    }
-    if (session && !resumingPrimary) {
+    if (!session)
+      throw new Error(`pi Session was not stored: ${stableSessionId}`);
+    if (!resumingPrimary) {
       transaction
         .delete(interactions)
         .where(eq(interactions.sessionId, session.id))
         .run();
     }
 
-    for (const interaction of parsed?.interactions ?? []) {
-      if (!session) {
-        throw new Error(`Claude Session was not stored: ${stableSessionId}`);
-      }
+    for (const interaction of parsed.interactions) {
       const projectId = projectIds.get(interaction.cwd);
       if (projectId === undefined) {
         throw new Error(
@@ -471,6 +412,7 @@ function storeSession(
         subOutputTokens: interaction.subTokens.output,
         subCacheReadTokens: interaction.subTokens.cacheRead,
         subCacheWriteTokens: interaction.subTokens.cacheWrite,
+        spawnedSubagents: interaction.spawnedSubagents,
         timestamp: interaction.timestamp,
         ...deriveLocalBuckets(interaction.timestamp, timezone),
       };
@@ -479,7 +421,7 @@ function storeSession(
         .values({
           sessionId: session.id,
           interactionKey: interaction.interactionKey,
-          harness: 'claude',
+          harness: 'pi',
           ...derived,
         })
         .onConflictDoUpdate({
@@ -489,29 +431,9 @@ function storeSession(
         .run();
     }
 
-    if (session) {
-      for (const update of subTokenUpdates) {
-        transaction
-          .update(interactions)
-          .set({
-            subInputTokens: update.subTokens.input,
-            subOutputTokens: update.subTokens.output,
-            subCacheReadTokens: update.subTokens.cacheRead,
-            subCacheWriteTokens: update.subTokens.cacheWrite,
-          })
-          .where(
-            and(
-              eq(interactions.sessionId, session.id),
-              eq(interactions.interactionKey, update.interactionKey),
-            ),
-          )
-          .run();
-      }
-    }
-
     transaction
       .insert(checkpoints)
-      .values({ harness: 'claude', stableSessionId, ...checkpoint })
+      .values({ harness: 'pi', stableSessionId, ...checkpoint })
       .onConflictDoUpdate({
         target: [checkpoints.harness, checkpoints.stableSessionId],
         set: checkpoint,

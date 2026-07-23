@@ -13,9 +13,15 @@
   import { onDestroy } from 'svelte';
 
   let {
+    harness,
     runs,
     activeCorrelationId,
-  }: { runs: JobRunSummary[]; activeCorrelationId: string | null } = $props();
+  }: {
+    harness: 'claude' | 'pi';
+    runs: JobRunSummary[];
+    activeCorrelationId: string | null;
+  } = $props();
+  const harnessLabel = $derived(harness === 'claude' ? 'Claude' : 'pi');
   let correlationId = $state<string | null>(null);
   let progress = $state<JobProgressPayload>({
     correlation_id: '',
@@ -99,14 +105,19 @@
     isTriggering = true;
     triggerError = null;
     try {
-      const response = await fetch('/api/jobs/ingest/claude', {
+      const response = await fetch(`/api/jobs/ingest/${harness}`, {
         method: 'POST',
       });
       if (!response.ok) throw new Error(await response.text());
       const { correlation_id } = (await response.json()) as {
         correlation_id: string;
       };
-      replaceState(resolve(`/?run=${encodeURIComponent(correlation_id)}`), {});
+      replaceState(
+        resolve(
+          `/?harness=${encodeURIComponent(harness)}&run=${encodeURIComponent(correlation_id)}`,
+        ),
+        {},
+      );
       watch(correlation_id);
     } catch (cause) {
       triggerError = cause instanceof Error ? cause.message : String(cause);
@@ -116,7 +127,14 @@
   }
 
   $effect(() => {
-    const requested = page.url.searchParams.get('run');
+    const requestedHarness = page.url.searchParams.get('harness');
+    const requestedRun = page.url.searchParams.get('run');
+    const requested =
+      requestedHarness === harness ||
+      (requestedHarness === null &&
+        runs.some((run) => run.correlationId === requestedRun))
+        ? requestedRun
+        : null;
     const run = requested ?? activeCorrelationId;
     if (run && run !== correlationId) watch(run);
   });
@@ -124,18 +142,18 @@
   onDestroy(() => stream?.close());
 </script>
 
-<section aria-labelledby="claude-ingest-heading">
+<section aria-labelledby={`${harness}-ingest-heading`}>
   <div class="section-heading">
     <div>
-      <p class="eyebrow">Claude</p>
-      <h2 id="claude-ingest-heading">Ingest session history</h2>
+      <p class="eyebrow">{harnessLabel}</p>
+      <h2 id={`${harness}-ingest-heading`}>Ingest session history</h2>
     </div>
     <button onclick={trigger} disabled={isTriggering || isRunning}>
       {isTriggering
         ? 'Starting…'
         : isRunning
           ? 'Ingestion running…'
-          : 'Ingest Claude'}
+          : `Ingest ${harnessLabel}`}
     </button>
   </div>
 
@@ -160,7 +178,7 @@
       <span>{progress.files_done} of {progress.files_total} files</span>
     </div>
     <progress
-      aria-label="Claude ingest file progress"
+      aria-label={`${harnessLabel} ingest file progress`}
       value={progress.files_done}
       max={progress.files_total || 1}>{percentage}%</progress
     >
@@ -168,7 +186,9 @@
       <span>{outcome ? 'Last file' : 'Current file'}</span>
       {progress.current_file ??
         lastFile ??
-        (outcome ? 'No file processed' : 'Discovering Claude sessions…')}
+        (outcome
+          ? 'No file processed'
+          : `Discovering ${harnessLabel} sessions…`)}
     </p>
 
     <div class="terminal" aria-live="polite">
@@ -181,7 +201,7 @@
         </strong>
         {#if outcome.error}<span>{outcome.error}</span>{/if}
       {:else}
-        <span>Claude ingestion in progress</span>
+        <span>{harnessLabel} ingestion in progress</span>
       {/if}
     </div>
 
@@ -198,7 +218,7 @@
     </ol>
   {:else}
     <p class="empty-state">
-      Start ingestion to discover Claude session files from your configured
+      Start ingestion to discover {harnessLabel} session files from your configured
       sources. Re-running is safe and resumes from saved checkpoints.
     </p>
   {/if}

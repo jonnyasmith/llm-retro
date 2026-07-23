@@ -40,7 +40,7 @@ export const interactions = sqliteTable(
     sessionId: integer('session_id')
       .notNull()
       .references(() => sessions.id),
-    openingUserRecordId: text('opening_user_record_id').notNull(),
+    interactionKey: text('interaction_key').notNull(),
     harness: text('harness').notNull(),
     projectId: integer('project_id')
       .notNull()
@@ -55,13 +55,16 @@ export const interactions = sqliteTable(
     subOutputTokens: integer('sub_output_tokens'),
     subCacheReadTokens: integer('sub_cache_read_tokens'),
     subCacheWriteTokens: integer('sub_cache_write_tokens'),
+    spawnedSubagents: integer('spawned_subagents', { mode: 'boolean' })
+      .notNull()
+      .default(false),
     timestamp: integer('timestamp').notNull(),
     localDow: integer('local_dow').notNull(),
     localHour: integer('local_hour').notNull(),
     localDate: text('local_date').notNull(),
   },
   (table) => [
-    unique().on(table.sessionId, table.openingUserRecordId),
+    unique().on(table.sessionId, table.interactionKey),
     check(
       'interaction_local_dow_range',
       sql`${table.localDow} between 0 and 6`,

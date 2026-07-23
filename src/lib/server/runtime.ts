@@ -1,5 +1,6 @@
 import type { Database } from './database/connection';
 import { createClaudeIngestHandler } from './jobs/claude-ingest';
+import { createPiIngestHandler } from './jobs/pi-ingest';
 import { JobDispatcher, reconcileInterruptedJobRuns } from './jobs/dispatcher';
 import { JobEventSource } from './jobs/events';
 import { stubJobHandler } from './jobs/stub-job';
@@ -14,6 +15,7 @@ export function initialiseRuntime(database: Database) {
     { type: 'ingest', scope: 'claude' },
     createClaudeIngestHandler(),
   );
+  jobBackend.register({ type: 'ingest', scope: 'pi' }, createPiIngestHandler());
   const dispatcher = new JobDispatcher(database, jobEvents, {
     backend: jobBackend,
   });

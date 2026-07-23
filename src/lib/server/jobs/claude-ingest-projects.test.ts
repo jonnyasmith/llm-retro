@@ -86,7 +86,7 @@ describe('Claude ingest Project attribution', () => {
       const storedInteraction = fixture.database
         .select()
         .from(interactions)
-        .where(eq(interactions.openingUserRecordId, 'cross-project-prompt'))
+        .where(eq(interactions.interactionKey, 'cross-project-prompt'))
         .get();
 
       expect(sessionProject).toMatchObject({ gitRemoteUrl: null });
