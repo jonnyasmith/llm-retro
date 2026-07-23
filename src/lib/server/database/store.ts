@@ -1,10 +1,12 @@
 import { and, count, desc, eq, sql } from 'drizzle-orm';
+import type { AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Database } from './connection';
 import type { JobIdentity } from '../jobs/types';
-import { interactions, jobRuns, settings } from './schema';
+import { interactions, jobRuns, projects, sessions, settings } from './schema';
 import { deriveLocalBuckets } from './time-buckets';
+import { providerOf } from '../model';
 
 export type Harness = 'claude' | 'codex' | 'pi' | 'omp';
 export type LogSources = Record<Harness, string[]>;
@@ -173,6 +175,177 @@ export function getActivityHeatmap(database: Database) {
     .groupBy(interactions.localDow, interactions.localHour)
     .orderBy(interactions.localDow, interactions.localHour)
     .all();
+}
+
+type TokenColumn = AnySQLiteColumn;
+
+const allTokenColumns: TokenColumn[] = [
+  interactions.mainInputTokens,
+  interactions.mainOutputTokens,
+  interactions.mainCacheReadTokens,
+  interactions.mainCacheWriteTokens,
+  interactions.subInputTokens,
+  interactions.subOutputTokens,
+  interactions.subCacheReadTokens,
+  interactions.subCacheWriteTokens,
+];
+
+// The CASE keeps a bucket null when every row is null, rather than SUM's
+// coalesce-to-zero, so genuine absence never reads as a real zero.
+function nullAwareSum(columns: TokenColumn[]) {
+  const allNull = sql.join(
+    columns.map((column) => sql`${column} is null`),
+    sql` and `,
+  );
+  const reportedSum = sql.join(
+    columns.map((column) => sql`coalesce(${column}, 0)`),
+    sql` + `,
+  );
+  return sql<
+    number | null
+  >`sum(case when ${allNull} then null else ${reportedSum} end)`;
+}
+
+// Combined display buckets pair each main column with its sub column; the total
+// spans all eight.
+function tokenRollup() {
+  return {
+    inputTokens: nullAwareSum([
+      interactions.mainInputTokens,
+      interactions.subInputTokens,
+    ]),
+    outputTokens: nullAwareSum([
+      interactions.mainOutputTokens,
+      interactions.subOutputTokens,
+    ]),
+    cacheReadTokens: nullAwareSum([
+      interactions.mainCacheReadTokens,
+      interactions.subCacheReadTokens,
+    ]),
+    cacheWriteTokens: nullAwareSum([
+      interactions.mainCacheWriteTokens,
+      interactions.subCacheWriteTokens,
+    ]),
+    totalTokens: nullAwareSum(allTokenColumns),
+  };
+}
+
+export function getProjectBreakdown(database: Database) {
+  return database
+    .select({
+      projectId: interactions.projectId,
+      rootPath: projects.rootPath,
+      gitRemoteUrl: projects.gitRemoteUrl,
+      interactionCount: count(),
+      ...tokenRollup(),
+    })
+    .from(interactions)
+    .innerJoin(projects, eq(interactions.projectId, projects.id))
+    .groupBy(interactions.projectId)
+    .orderBy(desc(count()), projects.rootPath)
+    .all();
+}
+
+export function getHarnessBreakdown(database: Database) {
+  return database
+    .select({
+      harness: interactions.harness,
+      interactionCount: count(),
+      ...tokenRollup(),
+    })
+    .from(interactions)
+    .groupBy(interactions.harness)
+    .orderBy(desc(count()), interactions.harness)
+    .all();
+}
+
+export function getModelBreakdown(database: Database) {
+  const rows = database
+    .select({
+      model: interactions.model,
+      interactionCount: count(),
+      ...tokenRollup(),
+    })
+    .from(interactions)
+    .groupBy(interactions.model)
+    .orderBy(desc(count()), interactions.model)
+    .all();
+
+  return rows.map((row) => ({ ...row, provider: providerOf(row.model) }));
+}
+
+export function getSessionShape(database: Database) {
+  const duration = sql<
+    number | null
+  >`case when ${sessions.startedAt} is not null and ${sessions.endedAt} is not null and ${sessions.endedAt} > ${sessions.startedAt} then ${sessions.endedAt} - ${sessions.startedAt} end`;
+  const durationExcluded = sql<number>`sum(case when ${sessions.startedAt} is null or ${sessions.endedAt} is null or ${sessions.endedAt} <= ${sessions.startedAt} then 1 else 0 end)`;
+
+  const sessionRows = database
+    .select({
+      harness: sessions.harness,
+      sessionCount: count(),
+      averageDurationMs: sql<number | null>`avg(${duration})`,
+      durationExcluded,
+    })
+    .from(sessions)
+    .groupBy(sessions.harness)
+    .all();
+
+  const interactionRows = database
+    .select({
+      harness: interactions.harness,
+      interactionCount: count(),
+    })
+    .from(interactions)
+    .groupBy(interactions.harness)
+    .all();
+  const interactionsByHarness = new Map(
+    interactionRows.map((row) => [row.harness, row.interactionCount]),
+  );
+
+  const byHarness = sessionRows
+    .map((row) => {
+      const interactionCount = interactionsByHarness.get(row.harness) ?? 0;
+      return {
+        harness: row.harness,
+        sessionCount: row.sessionCount,
+        interactionCount,
+        averageInteractionsPerSession:
+          row.sessionCount === 0 ? 0 : interactionCount / row.sessionCount,
+        averageDurationMs: row.averageDurationMs,
+        durationExcluded: row.durationExcluded,
+      };
+    })
+    .sort(
+      (a, b) =>
+        b.sessionCount - a.sessionCount || a.harness.localeCompare(b.harness),
+    );
+
+  const overall = database
+    .select({
+      sessionCount: count(),
+      averageDurationMs: sql<number | null>`avg(${duration})`,
+      durationExcluded,
+    })
+    .from(sessions)
+    .get();
+  const totalInteractions = interactionRows.reduce(
+    (sum, row) => sum + row.interactionCount,
+    0,
+  );
+  const sessionCount = overall?.sessionCount ?? 0;
+
+  return {
+    totals: {
+      sessionCount,
+      interactionCount: totalInteractions,
+      averageInteractionsPerSession:
+        sessionCount === 0 ? 0 : totalInteractions / sessionCount,
+      averageDurationMs: overall?.averageDurationMs ?? null,
+      durationExcluded: overall?.durationExcluded ?? 0,
+    },
+    byHarness,
+  };
 }
 
 export function recomputeLocalBuckets(

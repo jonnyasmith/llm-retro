@@ -4,6 +4,7 @@ import type {
   NormalisedInteraction,
   TokenBuckets,
 } from './ingest-pipeline';
+import { canonicaliseModel } from '../model';
 
 interface OmpRecord {
   type?: unknown;
@@ -442,10 +443,6 @@ function parseTimestamp(value: unknown): number | null {
   if (typeof value !== 'string') return null;
   const timestamp = Date.parse(value);
   return Number.isFinite(timestamp) ? timestamp : null;
-}
-
-function canonicaliseModel(model: string): string {
-  return model.replace(/\[[^\]]*\]$/, '').replace(/-\d{8}$/, '');
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -1,4 +1,5 @@
 import type { TokenBuckets } from './ingest-pipeline';
+import { canonicaliseModel } from '../model';
 
 interface ClaudeRecord {
   type?: unknown;
@@ -492,10 +493,6 @@ function selectModel(assistants: ClaudeRecord[], filePath: string): string {
     if (outputTokens > (outputByModel.get(selected) ?? 0)) selected = model;
   }
   return selected;
-}
-
-function canonicaliseModel(model: string): string {
-  return model.replace(/\[[^\]]*\]$/, '').replace(/-\d{8}$/, '');
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

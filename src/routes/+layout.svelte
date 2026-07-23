@@ -7,6 +7,9 @@
   const destinations = [
     { href: '/overview', label: 'Overview' },
     { href: '/activity', label: 'Activity' },
+    { href: '/projects', label: 'Projects' },
+    { href: '/models', label: 'Models' },
+    { href: '/sessions', label: 'Sessions' },
     { href: '/', label: 'Jobs' },
   ] as const;
 </script>
