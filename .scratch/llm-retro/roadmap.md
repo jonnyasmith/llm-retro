@@ -21,9 +21,13 @@
 
 ## Milestone 3 — Breadth across Harnesses
 
-- **S8. pi adapter** — messages with `usage`; handle `model_change`. Needs: S4 (adapter contract).
-- **S9. Codex adapter** — correlate `token_count` event records to turns (resolve cumulative vs delta); per-turn model from `turn_context`; null cache_write. Needs: S4.
-- **S10. omp adapter** — parse raw session logs incl. nested sub-agent files; mirror offset/dedup approach. Needs: S4.
+> Contract frozen in `docs/adr/0008` (adapter-strategy seam), `0002` (Session may span Projects), `0001` (adapter-supplied `interaction_key`). Sequencing de-risks the seam against the hardest Harness while it's warm: build pi concretely → extract → grill+build Codex → build omp. Adapter owns topology + `stableSessionId` + `parse(slice) → NormalisedSession`; pipeline owns stable-read, checkpoint, slice, archive, store, dedup; absence rides the null-object rule (no `if harness ===`).
+
+- **S8. pi adapter** — build concretely against the current Claude ingest (extraction comes next, S8b). Genuine prompt = `message.role === "user"` (tool results are a distinct `toolResult` role; no `isMeta` needed). Interaction model comes straight off assistant messages (`model_change` is a marker, not a decision). Fact-find at build time: where flat-file pi sub-agent tokens live (either outcome absorbed by null-object). No grilling required. Needs: S4.
+- **S8b. Extract shared ingest pipeline** — refactor Claude + pi into the ADR-0008 seam: pipeline owns the generic machinery, adapters implement `discoverSessionGroups()` + `parse`. Lands the two model bends as migrations: `opening_user_record_id` → `interaction_key`; `session.projectId` → nullable. Design pass, not a grilling. Needs: S8.
+- **S9-grill. Codex grilling** — dedicated session (the only M3 decision surface): genuine-prompt detection (a `turn_id` bundles an injected env/context user record + the typed prompt — the Codex `isMeta` analogue); Interaction boundary (`turn_id` vs first-user-record); `token_count` cumulative-vs-delta + correlating separate `event_msg` token records to turns. Run immediately after S8b to catch seam leaks while warm. Needs: S8b.
+- **S9. Codex adapter** — per-turn model + `cwd` from `turn_context` (Session spans Projects → interaction-level attribution, nullable session project); `stableSessionId` from `session_meta.payload.id`; topology is date-nested + relocation into `archived_sessions` (dedup across two roots); null cache_write. Needs: S9-grill.
+- **S10. omp adapter** — the Claude-twin: parse raw session logs incl. nested sub-agent files; mirror `stats.db` offset/dedup approach. Low decision density; contract + Claude adapter answer most of it. No grilling required. Needs: S9.
 
 ## Milestone 4 — Fast-follow views
 
