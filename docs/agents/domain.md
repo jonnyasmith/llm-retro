@@ -9,11 +9,11 @@ A coding tool that drives an LLM and writes its own session logs — currently C
 _Avoid_: Agent, tool, client, CLI.
 
 **Session**:
-One run of a single Harness in a single project, corresponding to one log file. A grouping dimension above Interaction; the count of Sessions is itself a metric of interest.
+One run of a single Harness, corresponding to one log file. A grouping dimension above Interaction; the count of Sessions is itself a metric of interest. A Session usually sits in one Project, but need not — some Harnesses change working directory mid-run, so a Session may span Projects, and Project attribution is authoritative at the Interaction, not the Session. The backing log file may also move on disk (e.g. archived) without changing the Session's identity.
 _Avoid_: Conversation, thread, chat, rollout.
 
 **Interaction**:
-One user prompt together with all model and tool activity it triggers, up to the next user prompt. Bounded by the user's inputs, not by the model's turns — a single Interaction may span many underlying log records and several model responses. The atomic unit of work the tool tracks; it carries the time (for hour/day metrics), the Model, and the token usage. Sub-agent activity the harness spawns is not its own Interaction; its tokens fold into the Interaction that spawned it, retained as a main-vs-sub-agent split.
+One user prompt together with all model and tool activity it triggers, up to the next user prompt. Bounded by the user's inputs, not by the model's turns — a single Interaction may span many underlying log records and several model responses. The atomic unit of work the tool tracks; it carries the time (for hour/day metrics), the Model, and the token usage. Sub-agent activity the harness spawns is not its own Interaction; its tokens fold into the Interaction that spawned it, retained as a main-vs-sub-agent split. Each Interaction has a stable **interaction key** — an identifier the Harness's adapter supplies that survives re-ingest — used to recognise the same Interaction across runs; what serves as that key differs by Harness.
 _Avoid_: Turn, message, request, exchange, prompt.
 
 **Model**:
