@@ -11,6 +11,7 @@
     { href: '/models', label: 'Models' },
     { href: '/sessions', label: 'Sessions' },
     { href: '/', label: 'Jobs' },
+    { href: '/settings', label: 'Settings' },
   ] as const;
 </script>
 
@@ -77,6 +78,7 @@
 
   .destinations {
     display: flex;
+    flex-wrap: wrap;
     gap: clamp(0.8rem, 4vw, 1.75rem);
   }
 
@@ -98,7 +100,7 @@
 
     .destinations {
       width: 100%;
-      justify-content: space-between;
+      gap: 0.75rem 1.25rem;
     }
   }
 </style>

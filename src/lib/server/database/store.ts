@@ -2,28 +2,25 @@ import { and, count, desc, eq, sql } from 'drizzle-orm';
 import type { AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { ingestHarnesses } from '../../jobs/contracts';
 import type { Database } from './connection';
 import type { JobIdentity } from '../jobs/types';
+import type {
+  ApplicationSettings,
+  LogSources,
+  SettingsChanges,
+} from '../../settings/contracts';
+import { IngestionActiveError } from '../settings/errors';
 import { interactions, jobRuns, projects, sessions, settings } from './schema';
 import { deriveLocalBuckets } from './time-buckets';
 import { providerOf } from '../model';
 
-export type Harness = 'claude' | 'codex' | 'pi' | 'omp';
-export type LogSources = Record<Harness, string[]>;
-
-export interface ApplicationSettings {
-  timezone: string;
-  rawArchiveEnabled: boolean;
-  rawArchivePath: string | null;
-  logSources: LogSources;
-}
-
-export interface SettingsChanges {
-  timezone?: string;
-  rawArchiveEnabled?: boolean;
-  rawArchivePath?: string | null;
-  logSourceOverrides?: Partial<LogSources>;
-}
+export type {
+  ApplicationSettings,
+  Harness,
+  LogSources,
+  SettingsChanges,
+} from '../../settings/contracts';
 
 type NewInteraction = typeof interactions.$inferInsert;
 type StoredInteraction = typeof interactions.$inferSelect;
@@ -59,6 +56,7 @@ export function getSettings(
     timezone: stored?.timezone ?? operatingSystemTimezone(),
     rawArchiveEnabled: stored?.rawArchiveEnabled ?? false,
     rawArchivePath: stored?.rawArchivePath ?? null,
+    logSourceOverrides: stored?.logSourceOverrides ?? {},
     logSources: {
       ...resolveDefaultLogSources(),
       ...(stored?.logSourceOverrides ?? {}),
@@ -66,12 +64,23 @@ export function getSettings(
   };
 }
 
-export function updateSettings(
+export function persistSettings(
   database: Database,
   changes: SettingsChanges,
+  options: { rejectTimezoneChangeDuringIngestion?: boolean } = {},
 ): ApplicationSettings {
   const stored = database.select().from(settings).get();
   const current = getSettings(database);
+  const logSourceOverrides = { ...(stored?.logSourceOverrides ?? {}) };
+  for (const harness of ingestHarnesses) {
+    const paths = changes.logSourceOverrides?.[harness];
+    if (paths === undefined) continue;
+    if (paths === null) {
+      delete logSourceOverrides[harness];
+    } else {
+      logSourceOverrides[harness] = paths;
+    }
+  }
   const values = {
     timezone: changes.timezone ?? current.timezone,
     rawArchiveEnabled: changes.rawArchiveEnabled ?? current.rawArchiveEnabled,
@@ -79,15 +88,24 @@ export function updateSettings(
       changes.rawArchivePath === undefined
         ? current.rawArchivePath
         : changes.rawArchivePath,
-    logSourceOverrides: {
-      ...(stored?.logSourceOverrides ?? {}),
-      ...(changes.logSourceOverrides ?? {}),
-    },
+    logSourceOverrides,
   };
   deriveLocalBuckets(0, values.timezone);
 
   database.transaction((transaction) => {
     if (current.timezone !== values.timezone) {
+      if (options.rejectTimezoneChangeDuringIngestion) {
+        const activeIngestion = transaction
+          .select({ id: jobRuns.id })
+          .from(jobRuns)
+          .where(and(eq(jobRuns.type, 'ingest'), eq(jobRuns.status, 'running')))
+          .get();
+        if (activeIngestion) {
+          throw new IngestionActiveError(
+            'An Ingestion run is running; retry when it has finished',
+          );
+        }
+      }
       recomputeWithTransaction(transaction, values.timezone);
     }
 
@@ -141,6 +159,16 @@ export function listJobRuns(
     .orderBy(desc(jobRuns.id))
     .limit(limit)
     .all();
+}
+
+export function hasActiveIngestRun(database: Database): boolean {
+  return (
+    database
+      .select({ id: jobRuns.id })
+      .from(jobRuns)
+      .where(and(eq(jobRuns.type, 'ingest'), eq(jobRuns.status, 'running')))
+      .get() !== undefined
+  );
 }
 
 export function getOverviewTotals(database: Database) {

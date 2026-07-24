@@ -16,7 +16,7 @@ import {
   projects,
   sessions,
 } from '../database/schema';
-import { updateSettings } from '../database/store';
+import { persistSettings } from '../database/store';
 import type { CwdProjectResolver } from './project-resolver';
 import {
   FAKE_HARNESS,
@@ -193,7 +193,7 @@ describe('Ingest pipeline', () => {
     const archiveRoot = join(fixture.root, 'raw-archive');
     const sessionPath = join(fixture.logSource, 'broken.log');
     await writeFile(sessionPath, 'not valid json\n');
-    updateSettings(fixture.database, {
+    persistSettings(fixture.database, {
       rawArchiveEnabled: true,
       rawArchivePath: archiveRoot,
     });
@@ -217,7 +217,7 @@ describe('Ingest pipeline', () => {
     await writeLines(sessionPath, [
       { key: 'arch-1', cwd: '/repo/one', timestamp: BASE },
     ]);
-    updateSettings(fixture.database, {
+    persistSettings(fixture.database, {
       rawArchiveEnabled: true,
       rawArchivePath: archiveRoot,
     });
@@ -261,7 +261,7 @@ describe('Ingest pipeline', () => {
     await writeLines(join(secondSource, 'shared.log'), [
       { key: 'second', cwd: '/repo/two', timestamp: BASE + 1_000 },
     ]);
-    updateSettings(fixture.database, {
+    persistSettings(fixture.database, {
       rawArchiveEnabled: true,
       rawArchivePath: archiveRoot,
       logSourceOverrides: { [FAKE_HARNESS]: [fixture.logSource, secondSource] },
@@ -297,7 +297,7 @@ describe('Ingest pipeline', () => {
     await writeLines(join(fixture.logSource, 'a.log'), [
       { key: 'a-1', cwd: '/repo/one', timestamp: BASE },
     ]);
-    updateSettings(fixture.database, {
+    persistSettings(fixture.database, {
       rawArchiveEnabled: true,
       rawArchivePath: null,
     });
@@ -320,7 +320,7 @@ describe('Ingest pipeline', () => {
     await writeLines(sessionPath, [
       { key: 'rf-1', cwd: '/repo/one', timestamp: BASE },
     ]);
-    updateSettings(fixture.database, {
+    persistSettings(fixture.database, {
       rawArchiveEnabled: true,
       rawArchivePath: archiveRoot,
     });

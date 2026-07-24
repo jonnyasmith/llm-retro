@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDatabase } from '../database/connection';
-import { updateSettings } from '../database/store';
+import { persistSettings } from '../database/store';
 
 const temporaryDirectories: string[] = [];
 
@@ -14,7 +14,7 @@ export async function createPiIngestFixture() {
   const projectDirectory = join(logSource, '--work-alpha--');
   await mkdir(projectDirectory, { recursive: true });
   const connection = openDatabase({ LLM_RETRO_DATA_DIR: dataDirectory });
-  updateSettings(connection.database, {
+  persistSettings(connection.database, {
     timezone: 'Asia/Kolkata',
     logSourceOverrides: { pi: [logSource] },
   });

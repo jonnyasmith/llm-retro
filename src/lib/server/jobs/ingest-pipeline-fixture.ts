@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, extname, join } from 'node:path';
 import { openDatabase, type Database } from '../database/connection';
-import { updateSettings, type Harness } from '../database/store';
+import { persistSettings, type Harness } from '../database/store';
 import {
   createIngestHandler,
   type IdentifiedSession,
@@ -32,7 +32,7 @@ export async function createPipelineFixture() {
   const logSource = join(root, 'sessions');
   await mkdir(logSource, { recursive: true });
   const connection = openDatabase({ LLM_RETRO_DATA_DIR: dataDirectory });
-  updateSettings(connection.database, {
+  persistSettings(connection.database, {
     timezone: 'Asia/Kolkata',
     logSourceOverrides: { [FAKE_HARNESS]: [logSource] },
   });

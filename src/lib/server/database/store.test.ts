@@ -15,7 +15,7 @@ import {
   insertInteraction,
   listJobRuns,
   resolveDefaultLogSources,
-  updateSettings,
+  persistSettings,
 } from './store';
 
 const temporaryDirectories: string[] = [];
@@ -282,11 +282,12 @@ describe('analytical store', () => {
         timezone: 'Europe/London',
         rawArchiveEnabled: false,
         rawArchivePath: null,
+        logSourceOverrides: {},
         logSources: resolveDefaultLogSources(),
       });
       expect(connection.database.select().from(settings).all()).toHaveLength(0);
 
-      updateSettings(connection.database, {
+      persistSettings(connection.database, {
         timezone: 'Asia/Kolkata',
         rawArchiveEnabled: true,
         rawArchivePath: '/archive',
@@ -297,13 +298,14 @@ describe('analytical store', () => {
         timezone: 'Asia/Kolkata',
         rawArchiveEnabled: true,
         rawArchivePath: '/archive',
+        logSourceOverrides: { codex: ['/logs/codex'] },
         logSources: {
           ...resolveDefaultLogSources(),
           codex: ['/logs/codex'],
         },
       });
 
-      updateSettings(connection.database, {
+      persistSettings(connection.database, {
         rawArchiveEnabled: false,
         rawArchivePath: null,
       });
@@ -320,7 +322,7 @@ describe('analytical store', () => {
     const connection = await createDatabase();
 
     try {
-      updateSettings(connection.database, {
+      persistSettings(connection.database, {
         logSourceOverrides: { claude: ['/external/claude'] },
       });
 
@@ -337,7 +339,7 @@ describe('analytical store', () => {
     const connection = await createDatabase();
 
     try {
-      updateSettings(connection.database, { timezone: 'Europe/London' });
+      persistSettings(connection.database, { timezone: 'Europe/London' });
       const { project, session } = await createSessionFixture(
         connection.database,
       );
@@ -362,7 +364,7 @@ describe('analytical store', () => {
       `);
 
       expect(() =>
-        updateSettings(connection.database, { timezone: 'Asia/Kolkata' }),
+        persistSettings(connection.database, { timezone: 'Asia/Kolkata' }),
       ).toThrow(/settings update rejected/);
       expect(getSettings(connection.database).timezone).toBe('Europe/London');
       expect(
@@ -397,7 +399,7 @@ describe('analytical store', () => {
         localDate: '2025-01-01',
       });
 
-      updateSettings(connection.database, { timezone: 'Asia/Kolkata' });
+      persistSettings(connection.database, { timezone: 'Asia/Kolkata' });
       expect(
         connection.database.select().from(interactions).get(),
       ).toMatchObject({

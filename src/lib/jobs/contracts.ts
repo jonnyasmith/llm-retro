@@ -6,14 +6,28 @@ export const jobRunStatuses = [
   'interrupted',
 ] as const;
 
-export const ingestHarnessLabels = {
+export const ingestHarnesses = ['claude', 'codex', 'pi', 'omp'] as const;
+
+export type IngestHarness = (typeof ingestHarnesses)[number];
+
+export const ingestHarnessLabels: Record<IngestHarness, string> = {
   claude: 'Claude',
   codex: 'Codex',
   pi: 'pi',
   omp: 'omp',
-} as const;
+};
 
-export type IngestHarness = keyof typeof ingestHarnessLabels;
+export function mapIngestHarnesses<Value>(
+  mapper: (harness: IngestHarness) => Value,
+): Record<IngestHarness, Value> {
+  const [claude, codex, pi, omp] = ingestHarnesses;
+  return {
+    [claude]: mapper(claude),
+    [codex]: mapper(codex),
+    [pi]: mapper(pi),
+    [omp]: mapper(omp),
+  };
+}
 
 export type JobRunStatus = (typeof jobRunStatuses)[number];
 export type TerminalJobRunStatus = Extract<
