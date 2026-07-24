@@ -43,3 +43,11 @@ _Avoid_: Task, invocation, execution, session.
 **Checkpoint**:
 The record of how far Ingestion has consumed each log file, so a re-run or a restart after failure resumes from where it stopped and never reprocesses an already-ingested record.
 _Avoid_: Offset, cursor, watermark, bookmark.
+
+**Raw archive**:
+An opt-in copy of untouched source files beneath an app-owned root, organised by Harness. It protects history when a Harness prunes, rotates, or relocates its own logs; it is not the normalised query store.
+_Avoid_: Backup database, query store.
+
+**Log source**:
+One of the per-Harness root paths that Ingestion enumerates for session logs. Each Harness follows built-in defaults unless the user pins it to one or more override paths.
+_Avoid_: Archive root, data directory.
