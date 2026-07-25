@@ -6,24 +6,24 @@ It is single-user, single-machine and local-first: one process serving the UI, t
 
 ## Running it
 
-Node 24 or later.
+Node 24 or later, with corepack enabled (`corepack enable`) so the pinned pnpm is used.
 
 ```bash
-npm install
+pnpm install
 ```
 
 ```bash
-npm run dev
+pnpm dev
 ```
 
 For a production build:
 
 ```bash
-npm run build
+pnpm build
 ```
 
 ```bash
-npm run start
+pnpm start
 ```
 
 The SQLite database is created and migrated on startup, so there is no separate setup or migration step.
@@ -41,15 +41,15 @@ The Harnesses' own log files remain the system of record. The store is derived a
 
 ## Scripts
 
-| Command          | What it does                     |
-| ---------------- | -------------------------------- |
-| `npm run dev`    | Run the app in development       |
-| `npm run build`  | Build for production             |
-| `npm run start`  | Run the production build         |
-| `npm run test`   | Run the test suite               |
-| `npm run check`  | Type-check TypeScript and Svelte |
-| `npm run lint`   | Prettier check plus ESLint       |
-| `npm run format` | Rewrite files with Prettier      |
+| Command       | What it does                     |
+| ------------- | -------------------------------- |
+| `pnpm dev`    | Run the app in development       |
+| `pnpm build`  | Build for production             |
+| `pnpm start`  | Run the production build         |
+| `pnpm test`   | Run the test suite               |
+| `pnpm check`  | Type-check TypeScript and Svelte |
+| `pnpm lint`   | Prettier check plus ESLint       |
+| `pnpm format` | Rewrite files with Prettier      |
 
 ## Documentation
 
