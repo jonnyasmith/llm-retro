@@ -9,3 +9,4 @@ coverage
 *.sqlite3
 *.sqlite-shm
 *.sqlite-wal
+worktree.yaml
