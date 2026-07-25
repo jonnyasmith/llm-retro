@@ -33,6 +33,23 @@ Create a GitHub issue.
 
 Run `gh issue view <number> --comments`.
 
+## Tracker issues
+
+A **tracker** is a parent issue that indexes related child issues. It is labelled `tracker` and holds the shared context — ranking, sequencing, cross-cutting findings — that would otherwise be duplicated into every child or lost when a working document is deleted.
+
+- **Create**: `gh issue create --label tracker`, then link each child as a GitHub sub-issue (`gh api --method POST repos/<owner>/<repo>/issues/<tracker>/sub_issues -F sub_issue_id=<child-db-id>`, where the child's numeric **database id** comes from `gh api repos/<owner>/<repo>/issues/<n> --jq .id`). Put `Part of #<tracker>` at the foot of each child body so the link survives outside the GitHub UI.
+- **Triage labels belong on the children, not the tracker.** A tracker is a container; there is nothing about it for a maintainer to evaluate, and labelling it `needs-triage` inflates every triage sweep by one. Progress is read from `sub_issues_summary`, and the tracker is closed when its last child is.
+- **A tracker owns no work.** If it needs an assignee or acceptance criteria, it is a child issue wearing the wrong label.
+
+### `tracker` versus `wayfinder:map`
+
+Both are parent issues; they are not interchangeable.
+
+- `wayfinder:map` is for **exploratory** work of unknown shape. It carries the Notes / Decisions-so-far / Fog body, its children are typed `wayfinder:<type>`, and order is enforced by native issue dependencies and resolved by the frontier query below.
+- `tracker` is for a **known set** of independent items. Children are ordinary issues, any sequencing is advisory rather than blocking, and there is no fog to burn down.
+
+If the children must be worked in a discovered order, it is a map. If they could be picked off in any order and the ranking is just advice, it is a tracker.
+
 ## Wayfinding operations
 
 Used by `/wayfinder`. The **map** is a single issue with **child** issues as tickets.
