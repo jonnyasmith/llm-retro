@@ -1,6 +1,6 @@
 # Harness log formats
 
-A map of where each Harness writes its logs and which fields carry the facts Ingestion needs. **The adapter and its ingest test are the source of truth**; this document points at them. Verify against the code before trusting a line here.
+A map of where each Harness writes its logs and which fields carry the facts Ingestion needs. **The adapter and its log reader test are the source of truth**; this document points at them. Verify against the code before trusting a line here. The per-Harness tests below cover only what is specific to that Harness's grammar: everything shared runs against every registered Harness in `src/lib/server/jobs/ingest.test.ts`, off the fixture in `src/lib/server/jobs/ingest-fixture.ts`, which also owns each Harness's on-disk test layout.
 
 The reasoning behind any parsing rule lives in the ADRs, not here: the Interaction grain in [ADR-0001](../adr/0001-interaction-grain-bounded-by-user-prompts.md), Project identity in [ADR-0002](../adr/0002-project-identity-by-local-repo-root-path.md), the adapter/pipeline seam and per-Harness Interaction modelling in [ADR-0008](../adr/0008-harness-adapter-strategy-behind-shared-pipeline.md), and Codex Interaction extraction in [ADR-0010](../adr/0010-codex-interaction-extraction.md).
 
@@ -8,7 +8,7 @@ Common to all four: logs are append-only JSONL, one JSON object per line; timest
 
 ## Claude
 
-Adapter: `src/lib/server/jobs/claude-adapter.ts`. Log reader: `src/lib/server/jobs/claude-log-reader.ts`. Fixture and tests: `src/lib/server/jobs/claude-ingest-fixture.ts`, `src/lib/server/jobs/claude-ingest.test.ts`, `src/lib/server/jobs/claude-ingest-subagents.test.ts`.
+Adapter: `src/lib/server/jobs/claude-adapter.ts`. Log reader: `src/lib/server/jobs/claude-log-reader.ts`. Tests: `src/lib/server/jobs/claude-log-reader.test.ts`, `src/lib/server/jobs/claude-log-reader-subagents.test.ts`.
 
 - **Root and topology** — `~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl`. Exactly one directory level below the root is scanned.
 - **Sessions** — one file is one Session; the filename stem is the stable session id.
@@ -21,7 +21,7 @@ Adapter: `src/lib/server/jobs/claude-adapter.ts`. Log reader: `src/lib/server/jo
 
 ## pi
 
-Adapter: `src/lib/server/jobs/pi-adapter.ts`. Log reader: `src/lib/server/jobs/pi-log-reader.ts`. Fixture and test: `src/lib/server/jobs/pi-ingest-fixture.ts`, `src/lib/server/jobs/pi-ingest.test.ts`.
+Adapter: `src/lib/server/jobs/pi-adapter.ts`. Log reader: `src/lib/server/jobs/pi-log-reader.ts`. Test: `src/lib/server/jobs/pi-log-reader.test.ts`.
 
 - **Root and topology** — `~/.pi/agent/sessions/<encoded-cwd>/<ts>_<uuid>.jsonl`. One directory level below the root is scanned; nothing is parsed out of the filename.
 - **Sessions** — one file is one Session. Its **first** line must be a `session` record carrying `id`, `cwd` and `timestamp`.
@@ -34,7 +34,7 @@ Adapter: `src/lib/server/jobs/pi-adapter.ts`. Log reader: `src/lib/server/jobs/p
 
 ## Codex
 
-Adapter: `src/lib/server/jobs/codex-adapter.ts`. Log reader: `src/lib/server/jobs/codex-log-reader.ts`. Fixture and test: `src/lib/server/jobs/codex-ingest-fixture.ts`, `src/lib/server/jobs/codex-ingest.test.ts`.
+Adapter: `src/lib/server/jobs/codex-adapter.ts`. Log reader: `src/lib/server/jobs/codex-log-reader.ts`. Test: `src/lib/server/jobs/codex-log-reader.test.ts`.
 
 - **Roots and topology** — `~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl`, plus `~/.codex/archived_sessions/` with the same layout. Both roots are enumerated by default; `.jsonl` files sitting directly in a root are also picked up. A completed rollout is **moved** into `archived_sessions`, so the same file is reachable under two roots and enumeration de-duplicates by filename.
 - **Sessions** — one file is one Session. Its first line is a `session_meta` record.
@@ -47,7 +47,7 @@ Adapter: `src/lib/server/jobs/codex-adapter.ts`. Log reader: `src/lib/server/job
 
 ## omp
 
-Adapter: `src/lib/server/jobs/omp-adapter.ts`. Log reader: `src/lib/server/jobs/omp-log-reader.ts`. Fixture and test: `src/lib/server/jobs/omp-ingest-fixture.ts`, `src/lib/server/jobs/omp-ingest.test.ts`.
+Adapter: `src/lib/server/jobs/omp-adapter.ts`. Log reader: `src/lib/server/jobs/omp-log-reader.ts`. Test: `src/lib/server/jobs/omp-log-reader.test.ts`.
 
 - **Root and topology** — `~/.omp/agent/sessions/<folder>/<ts>_<uuid>.jsonl`. One directory level below the root is scanned.
 - **Sessions** — one primary file is one Session. The `session` record carrying `id`, `cwd` and `timestamp` need not be the first line: another record (a `title`) may precede it.

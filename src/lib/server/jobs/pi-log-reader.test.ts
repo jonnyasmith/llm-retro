@@ -1,36 +1,22 @@
-import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { interactions, sessions } from '../database/schema';
 import { createIngestHandler } from './ingest-pipeline';
 import { piIngestAdapter } from './pi-adapter';
 import { literalCwdProjectResolver } from './project-resolver';
 import {
-  appendPiJsonLines,
-  cleanupPiIngestFixtures,
-  createPiIngestFixture,
-  writePiJsonLines,
-} from './pi-ingest-fixture';
+  cleanupIngestFixtures,
+  createIngestFixture,
+  writeJsonLines,
+} from './ingest-fixture';
 
-const TOTALS_COLUMNS = {
-  interactionKey: interactions.interactionKey,
-  model: interactions.model,
-  mainInputTokens: interactions.mainInputTokens,
-  mainOutputTokens: interactions.mainOutputTokens,
-  mainCacheReadTokens: interactions.mainCacheReadTokens,
-  mainCacheWriteTokens: interactions.mainCacheWriteTokens,
-};
+afterEach(cleanupIngestFixtures);
 
-afterEach(cleanupPiIngestFixtures);
-
-describe('pi ingest Job handler', () => {
+describe('pi log grammar', () => {
   it('stores genuine responded Interactions with pi models, tokens, and subagent disclosure', async () => {
-    const fixture = await createPiIngestFixture();
+    const fixture = await createIngestFixture('pi');
     const stableSessionId = '11111111-1111-4111-8111-111111111111';
-    const sessionPath = join(
-      fixture.projectDirectory,
-      `2025-01-01T20-00-00-000Z_${stableSessionId}.jsonl`,
-    );
-    await writePiJsonLines(sessionPath, [
+    const sessionPath = fixture.sessionPath(stableSessionId);
+    await writeJsonLines(sessionPath, [
       {
         type: 'session',
         version: 3,
@@ -187,130 +173,6 @@ describe('pi ingest Job handler', () => {
       ]);
     } finally {
       fixture.sqlite.close();
-    }
-  });
-
-  it('rebuilds an in-flight Interaction consistently when a session grows', async () => {
-    const fixture = await createPiIngestFixture();
-    const fullFixture = await createPiIngestFixture();
-    const stableSessionId = '33333333-3333-4333-8333-333333333333';
-    const sessionFileName = `2025-01-01T20-00-00-000Z_${stableSessionId}.jsonl`;
-    const sessionPath = join(fixture.projectDirectory, sessionFileName);
-    const fullSessionPath = join(fullFixture.projectDirectory, sessionFileName);
-    const initialRecords = [
-      {
-        type: 'session',
-        version: 3,
-        id: stableSessionId,
-        timestamp: '2025-01-01T20:00:00.000Z',
-        cwd: '/work/alpha/subdirectory',
-      },
-      {
-        type: 'message',
-        id: 'complete-prompt',
-        timestamp: '2025-01-01T20:00:01.000Z',
-        message: { role: 'user', content: 'Build it' },
-      },
-      {
-        type: 'message',
-        id: 'complete-assistant',
-        timestamp: '2025-01-01T20:00:02.000Z',
-        message: {
-          role: 'assistant',
-          model: 'gpt-5.4-20260217',
-          usage: { input: 7, output: 7 },
-          content: [{ type: 'text', text: 'Done' }],
-        },
-      },
-      {
-        type: 'message',
-        id: 'growing-prompt',
-        timestamp: '2025-01-01T20:10:00.000Z',
-        message: { role: 'user', content: 'Review it' },
-      },
-      {
-        type: 'message',
-        id: 'growing-assistant-1',
-        timestamp: '2025-01-01T20:10:01.000Z',
-        message: {
-          role: 'assistant',
-          model: 'claude-haiku-4-5-20251001',
-          usage: { input: 10, output: 2, cacheWrite: 3 },
-          content: [{ type: 'text', text: 'Starting' }],
-        },
-      },
-    ];
-    const appendedRecords = [
-      {
-        type: 'message',
-        id: 'growing-assistant-2',
-        timestamp: '2025-01-01T20:10:02.000Z',
-        message: {
-          role: 'assistant',
-          model: 'claude-opus-4-8[1m]',
-          usage: { output: 20, cacheRead: 5 },
-          content: [{ type: 'text', text: 'Finished' }],
-        },
-      },
-    ];
-    await writePiJsonLines(sessionPath, initialRecords);
-    const handler = createIngestHandler(piIngestAdapter, {
-      resolveProject: literalCwdProjectResolver,
-    });
-
-    try {
-      await handler.run(null, {
-        correlationId: 'before-growth',
-        database: fixture.database,
-        progress: vi.fn(),
-        log: vi.fn(),
-      });
-      await appendPiJsonLines(sessionPath, appendedRecords);
-      await handler.run(null, {
-        correlationId: 'after-growth',
-        database: fixture.database,
-        progress: vi.fn(),
-        log: vi.fn(),
-      });
-      await writePiJsonLines(fullSessionPath, [
-        ...initialRecords,
-        ...appendedRecords,
-      ]);
-      await handler.run(null, {
-        correlationId: 'full-ingest',
-        database: fullFixture.database,
-        progress: vi.fn(),
-        log: vi.fn(),
-      });
-
-      const resumedTotals = fixture.database
-        .select(TOTALS_COLUMNS)
-        .from(interactions)
-        .all();
-      expect(resumedTotals).toEqual(
-        fullFixture.database.select(TOTALS_COLUMNS).from(interactions).all(),
-      );
-      expect(resumedTotals).toEqual([
-        {
-          interactionKey: 'complete-prompt',
-          model: 'gpt-5.4',
-          mainInputTokens: 7,
-          mainOutputTokens: 7,
-          mainCacheReadTokens: null,
-          mainCacheWriteTokens: null,
-        },
-        {
-          interactionKey: 'growing-prompt',
-          model: 'claude-opus-4-8',
-          mainInputTokens: 10,
-          mainOutputTokens: 22,
-          mainCacheReadTokens: 5,
-          mainCacheWriteTokens: 3,
-        },
-      ]);
-    } finally {
-      fixture.sqlite.close();
-      fullFixture.sqlite.close();
     }
   });
 });
