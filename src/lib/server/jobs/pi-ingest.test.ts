@@ -1,11 +1,9 @@
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { interactions, sessions } from '../database/schema';
-import {
-  createPiIngestHandler,
-  createPiIngestJob,
-  literalCwdProjectResolver,
-} from './pi-ingest';
+import { createIngestHandler } from './ingest-pipeline';
+import { piIngestAdapter } from './pi-adapter';
+import { literalCwdProjectResolver } from './project-resolver';
 import {
   appendPiJsonLines,
   cleanupPiIngestFixtures,
@@ -135,7 +133,7 @@ describe('pi ingest Job handler', () => {
         },
       },
     ]);
-    const handler = createPiIngestHandler({
+    const handler = createIngestHandler(piIngestAdapter, {
       resolveProject: literalCwdProjectResolver,
     });
 
@@ -256,7 +254,7 @@ describe('pi ingest Job handler', () => {
       },
     ];
     await writePiJsonLines(sessionPath, initialRecords);
-    const handler = createPiIngestHandler({
+    const handler = createIngestHandler(piIngestAdapter, {
       resolveProject: literalCwdProjectResolver,
     });
 
@@ -314,12 +312,5 @@ describe('pi ingest Job handler', () => {
       fixture.sqlite.close();
       fullFixture.sqlite.close();
     }
-  });
-
-  it('exposes the pi-scoped empty-payload Job', () => {
-    expect(createPiIngestJob()).toEqual({
-      identity: { type: 'ingest', scope: 'pi' },
-      payload: null,
-    });
   });
 });

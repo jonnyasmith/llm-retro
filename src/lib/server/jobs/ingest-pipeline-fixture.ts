@@ -88,7 +88,6 @@ export function createFakeAdapter(
 ): IngestAdapter<FakeMetadata> {
   return {
     harness: FAKE_HARNESS,
-    displayName: 'Fake',
     enumerateSourceFileGroups: overrides.enumerate ?? defaultEnumerate,
     identifySession: overrides.identify ?? defaultIdentify,
     findResumeBoundary:

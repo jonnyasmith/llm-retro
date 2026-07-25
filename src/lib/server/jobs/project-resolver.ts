@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { promisify } from 'node:util';
+import { isMissingPath } from './missing-path';
 
 export interface ResolvedProject {
   rootPath: string;
@@ -57,15 +58,6 @@ async function isDirectory(path: string): Promise<boolean> {
     if (isMissingPath(cause)) return false;
     throw cause;
   }
-}
-
-function isMissingPath(cause: unknown): boolean {
-  return (
-    typeof cause === 'object' &&
-    cause !== null &&
-    'code' in cause &&
-    cause.code === 'ENOENT'
-  );
 }
 
 function isNotGitRepository(cause: unknown): boolean {

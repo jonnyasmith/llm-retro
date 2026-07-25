@@ -10,6 +10,10 @@ export const harnesses = ['claude', 'codex', 'pi', 'omp'] as const;
 
 export type Harness = (typeof harnesses)[number];
 
+export function isHarness(value: string): value is Harness {
+  return harnesses.some((harness) => harness === value);
+}
+
 export const harnessLabels: Record<Harness, string> = {
   claude: 'Claude',
   codex: 'Codex',

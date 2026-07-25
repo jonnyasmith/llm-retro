@@ -2,11 +2,9 @@ import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { interactions } from '../database/schema';
-import {
-  createClaudeIngestHandler,
-  createClaudeIngestJob,
-  literalCwdProjectResolver,
-} from './claude-ingest';
+import { claudeIngestAdapter } from './claude-adapter';
+import { createIngestHandler } from './ingest-pipeline';
+import { literalCwdProjectResolver } from './project-resolver';
 import {
   appendJsonLines,
   cleanupClaudeIngestFixtures,
@@ -156,7 +154,7 @@ describe('Claude ingest parsing', () => {
         message: { content: 'do not enumerate me' },
       },
     ]);
-    const handler = createClaudeIngestHandler({
+    const handler = createIngestHandler(claudeIngestAdapter, {
       resolveProject: literalCwdProjectResolver,
     });
 
@@ -260,7 +258,7 @@ describe('Claude ingest parsing', () => {
       },
     ];
     await writeJsonLines(sessionPath, initialRecords);
-    const handler = createClaudeIngestHandler({
+    const handler = createIngestHandler(claudeIngestAdapter, {
       resolveProject: literalCwdProjectResolver,
     });
 
@@ -318,18 +316,5 @@ describe('Claude ingest parsing', () => {
       fixture.sqlite.close();
       fullFixture.sqlite.close();
     }
-  });
-
-  it('exposes the harness-scoped empty-payload Job and literal cwd resolver', async () => {
-    expect(createClaudeIngestJob()).toEqual({
-      identity: { type: 'ingest', scope: 'claude' },
-      payload: null,
-    });
-    await expect(
-      literalCwdProjectResolver('/deleted/project'),
-    ).resolves.toEqual({
-      rootPath: '/deleted/project',
-      gitRemoteUrl: null,
-    });
   });
 });

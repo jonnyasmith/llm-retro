@@ -2,10 +2,9 @@ import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { interactions } from '../database/schema';
-import {
-  createClaudeIngestHandler,
-  literalCwdProjectResolver,
-} from './claude-ingest';
+import { claudeIngestAdapter } from './claude-adapter';
+import { createIngestHandler } from './ingest-pipeline';
+import { literalCwdProjectResolver } from './project-resolver';
 import {
   cleanupClaudeIngestFixtures,
   createClaudeIngestFixture as createFixture,
@@ -287,7 +286,7 @@ describe('Claude ingest sub-agent folding', () => {
         },
       ],
     );
-    const handler = createClaudeIngestHandler({
+    const handler = createIngestHandler(claudeIngestAdapter, {
       resolveProject: literalCwdProjectResolver,
     });
 
@@ -422,7 +421,7 @@ describe('Claude ingest sub-agent folding', () => {
       },
     ];
     await writeJsonLines(sessionPath, records);
-    const handler = createClaudeIngestHandler({
+    const handler = createIngestHandler(claudeIngestAdapter, {
       resolveProject: literalCwdProjectResolver,
     });
     const run = (correlationId: string) =>

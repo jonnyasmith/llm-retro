@@ -1,7 +1,8 @@
 import { join } from 'node:path';
 import { interactions, sessions } from '../database/schema';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createCodexIngestHandler, createCodexIngestJob } from './codex-ingest';
+import { codexIngestAdapter } from './codex-adapter';
+import { createIngestHandler } from './ingest-pipeline';
 import {
   appendCodexJsonLines,
   cleanupCodexIngestFixtures,
@@ -77,7 +78,7 @@ const createHandler = (
     gitRemoteUrl: null,
   })),
 ) =>
-  createCodexIngestHandler({
+  createIngestHandler(codexIngestAdapter, {
     resolveProject,
   });
 
@@ -414,12 +415,5 @@ describe('Codex ingest Job handler', () => {
     } finally {
       fixture.sqlite.close();
     }
-  });
-
-  it('exposes the Codex-scoped empty-payload Job', () => {
-    expect(createCodexIngestJob()).toEqual({
-      identity: { type: 'ingest', scope: 'codex' },
-      payload: null,
-    });
   });
 });

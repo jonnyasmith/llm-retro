@@ -2,7 +2,8 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { interactions, sessions } from '../database/schema';
-import { createOmpIngestHandler, createOmpIngestJob } from './omp-ingest';
+import { createIngestHandler } from './ingest-pipeline';
+import { ompIngestAdapter } from './omp-adapter';
 import {
   appendOmpJsonLines,
   cleanupOmpIngestFixtures,
@@ -193,7 +194,7 @@ describe('omp ingest Job handler', () => {
       rootPath: cwd.startsWith('/work/alpha') ? '/work/alpha' : '/work/beta',
       gitRemoteUrl: null,
     }));
-    const handler = createOmpIngestHandler({ resolveProject });
+    const handler = createIngestHandler(ompIngestAdapter, { resolveProject });
 
     try {
       await handler.run(null, {
@@ -305,7 +306,7 @@ describe('omp ingest Job handler', () => {
       },
     ];
     await writeOmpJsonLines(sessionPath, initialRecords);
-    const handler = createOmpIngestHandler({
+    const handler = createIngestHandler(ompIngestAdapter, {
       resolveProject: async (cwd: string) => ({
         rootPath: cwd,
         gitRemoteUrl: null,
@@ -366,12 +367,5 @@ describe('omp ingest Job handler', () => {
       fixture.sqlite.close();
       fullFixture.sqlite.close();
     }
-  });
-
-  it('exposes the omp-scoped empty-payload Job', () => {
-    expect(createOmpIngestJob()).toEqual({
-      identity: { type: 'ingest', scope: 'omp' },
-      payload: null,
-    });
   });
 });

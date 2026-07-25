@@ -8,7 +8,7 @@ Common to all four: logs are append-only JSONL, one JSON object per line; timest
 
 ## Claude
 
-Adapter: `src/lib/server/jobs/claude-adapter.ts`, `src/lib/server/jobs/claude-ingest.ts`. Fixture and tests: `src/lib/server/jobs/claude-ingest-fixture.ts`, `src/lib/server/jobs/claude-ingest.test.ts`, `src/lib/server/jobs/claude-ingest-subagents.test.ts`.
+Adapter: `src/lib/server/jobs/claude-adapter.ts`. Log reader: `src/lib/server/jobs/claude-log-reader.ts`. Fixture and tests: `src/lib/server/jobs/claude-ingest-fixture.ts`, `src/lib/server/jobs/claude-ingest.test.ts`, `src/lib/server/jobs/claude-ingest-subagents.test.ts`.
 
 - **Root and topology** — `~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl`. Exactly one directory level below the root is scanned.
 - **Sessions** — one file is one Session; the filename stem is the stable session id.
@@ -21,7 +21,7 @@ Adapter: `src/lib/server/jobs/claude-adapter.ts`, `src/lib/server/jobs/claude-in
 
 ## pi
 
-Adapter: `src/lib/server/jobs/pi-adapter.ts`, `src/lib/server/jobs/pi-ingest.ts`. Fixture and test: `src/lib/server/jobs/pi-ingest-fixture.ts`, `src/lib/server/jobs/pi-ingest.test.ts`.
+Adapter: `src/lib/server/jobs/pi-adapter.ts`. Log reader: `src/lib/server/jobs/pi-log-reader.ts`. Fixture and test: `src/lib/server/jobs/pi-ingest-fixture.ts`, `src/lib/server/jobs/pi-ingest.test.ts`.
 
 - **Root and topology** — `~/.pi/agent/sessions/<encoded-cwd>/<ts>_<uuid>.jsonl`. One directory level below the root is scanned; nothing is parsed out of the filename.
 - **Sessions** — one file is one Session. Its **first** line must be a `session` record carrying `id`, `cwd` and `timestamp`.
@@ -34,7 +34,7 @@ Adapter: `src/lib/server/jobs/pi-adapter.ts`, `src/lib/server/jobs/pi-ingest.ts`
 
 ## Codex
 
-Adapter: `src/lib/server/jobs/codex-adapter.ts`, `src/lib/server/jobs/codex-ingest.ts`. Fixture and test: `src/lib/server/jobs/codex-ingest-fixture.ts`, `src/lib/server/jobs/codex-ingest.test.ts`.
+Adapter: `src/lib/server/jobs/codex-adapter.ts`. Log reader: `src/lib/server/jobs/codex-log-reader.ts`. Fixture and test: `src/lib/server/jobs/codex-ingest-fixture.ts`, `src/lib/server/jobs/codex-ingest.test.ts`.
 
 - **Roots and topology** — `~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl`, plus `~/.codex/archived_sessions/` with the same layout. Both roots are enumerated by default; `.jsonl` files sitting directly in a root are also picked up. A completed rollout is **moved** into `archived_sessions`, so the same file is reachable under two roots and enumeration de-duplicates by filename.
 - **Sessions** — one file is one Session. Its first line is a `session_meta` record.
@@ -47,7 +47,7 @@ Adapter: `src/lib/server/jobs/codex-adapter.ts`, `src/lib/server/jobs/codex-inge
 
 ## omp
 
-Adapter: `src/lib/server/jobs/omp-adapter.ts`, `src/lib/server/jobs/omp-ingest.ts`. Fixture and test: `src/lib/server/jobs/omp-ingest-fixture.ts`, `src/lib/server/jobs/omp-ingest.test.ts`.
+Adapter: `src/lib/server/jobs/omp-adapter.ts`. Log reader: `src/lib/server/jobs/omp-log-reader.ts`. Fixture and test: `src/lib/server/jobs/omp-ingest-fixture.ts`, `src/lib/server/jobs/omp-ingest.test.ts`.
 
 - **Root and topology** — `~/.omp/agent/sessions/<folder>/<ts>_<uuid>.jsonl`. One directory level below the root is scanned.
 - **Sessions** — one primary file is one Session. The `session` record carrying `id`, `cwd` and `timestamp` need not be the first line: another record (a `title`) may precede it.
