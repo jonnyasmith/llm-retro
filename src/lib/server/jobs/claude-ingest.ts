@@ -1,7 +1,7 @@
 import { readdir } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import {
-  findClaudeInteractionContextByteOffset,
+  findClaudePromptBoundary,
   readClaudeSession,
   readClaudeSubTokenUpdates,
   type NormalisedClaudeSession,
@@ -11,6 +11,7 @@ import {
   type IngestAdapter,
   type NormalisedSession,
   type ParseSessionSliceInput,
+  type SubTokenUpdateInput,
 } from './ingest-pipeline';
 import type { CwdProjectResolver } from './project-resolver';
 import type { Job, JobHandler } from './types';
@@ -50,7 +51,14 @@ const claudeIngestAdapter: IngestAdapter<null> = {
       metadata: null,
     };
   },
+  findResumeBoundary(primaryContents, beforeByteOffset, metadata) {
+    return {
+      byteOffset: findClaudePromptBoundary(primaryContents, beforeByteOffset),
+      metadata,
+    };
+  },
   parseSessionSlice: parseClaudeSessionSlice,
+  readSubTokenUpdates: readClaudeSliceSubTokenUpdates,
 };
 
 async function enumerateClaudeSourceFileGroups(logSources: string[]) {
@@ -66,42 +74,25 @@ async function enumerateClaudeSourceFileGroups(logSources: string[]) {
 function parseClaudeSessionSlice({
   primaryFilePath,
   primaryContents,
-  completePrimaryContents,
-  completeByteOffset,
-  startByteOffset,
   auxiliaryFiles,
-}: ParseSessionSliceInput<null>) {
-  let parsed =
-    primaryContents.length > 0
-      ? readClaudeSession(primaryFilePath, primaryContents, auxiliaryFiles)
-      : null;
-  if (parsed?.requiresInteractionContext === true && startByteOffset > 0) {
-    const contextByteOffset = findClaudeInteractionContextByteOffset(
-      completePrimaryContents,
-      startByteOffset,
-    );
-    parsed = readClaudeSession(
-      primaryFilePath,
-      completePrimaryContents
-        .subarray(contextByteOffset, completeByteOffset)
-        .toString('utf8'),
-      auxiliaryFiles,
-    );
-  }
+}: ParseSessionSliceInput<null>): NormalisedSession | null {
+  if (primaryContents.length === 0) return null;
+  return toNormalisedSession(
+    readClaudeSession(primaryFilePath, primaryContents, auxiliaryFiles),
+  );
+}
 
-  return {
-    session: parsed === null ? null : toNormalisedSession(parsed),
-    interactionUpdates:
-      auxiliaryFiles.length === 0
-        ? []
-        : readClaudeSubTokenUpdates(
-            primaryFilePath,
-            completePrimaryContents
-              .subarray(0, completeByteOffset)
-              .toString('utf8'),
-            auxiliaryFiles,
-          ),
-  };
+function readClaudeSliceSubTokenUpdates({
+  primaryFilePath,
+  completePrimaryContents,
+  auxiliaryFiles,
+}: SubTokenUpdateInput<null>) {
+  if (auxiliaryFiles.length === 0) return [];
+  return readClaudeSubTokenUpdates(
+    primaryFilePath,
+    completePrimaryContents,
+    auxiliaryFiles,
+  );
 }
 
 function toNormalisedSession(

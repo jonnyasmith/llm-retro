@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDatabase } from '../database/connection';
@@ -23,6 +23,13 @@ export async function createOmpIngestFixture() {
 
 export async function writeOmpJsonLines(path: string, records: unknown[]) {
   await writeFile(
+    path,
+    `${records.map((record) => JSON.stringify(record)).join('\n')}\n`,
+  );
+}
+
+export async function appendOmpJsonLines(path: string, records: unknown[]) {
+  await appendFile(
     path,
     `${records.map((record) => JSON.stringify(record)).join('\n')}\n`,
   );

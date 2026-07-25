@@ -1,3 +1,4 @@
+import { findLastPromptBoundary } from './jsonl-scan';
 import type { TokenBuckets } from './ingest-pipeline';
 import { canonicaliseModel } from '../model';
 
@@ -45,7 +46,6 @@ export interface NormalisedPiSession {
   startedAt: number | null;
   endedAt: number | null;
   interactions: NormalisedPiInteraction[];
-  requiresInteractionContext: boolean;
 }
 
 const tokenSources = [
@@ -116,30 +116,21 @@ export function readPiSession(
       filePath,
       metadata.cwd,
     ).map((pending) => normaliseInteraction(pending, filePath)),
-    requiresInteractionContext:
-      recordsBeforeFirstPromptAffectInteraction(records),
   };
 }
 
-export function findPiInteractionContextByteOffset(
+export function findPiPromptBoundary(
   contents: Buffer,
   beforeByteOffset: number,
 ): number {
-  let lineStart = 0;
-  let lastGenuinePromptStart = 0;
-  let lineNumber = 1;
-  while (lineStart < beforeByteOffset) {
-    const newline = contents.indexOf(10, lineStart);
-    if (newline === -1 || newline >= beforeByteOffset) break;
-    const line = contents.subarray(lineStart, newline).toString('utf8');
-    if (line.length > 0) {
-      const [record] = parseRecords(line, '<pi primary context>', lineNumber);
-      if (isGenuineUserPrompt(record)) lastGenuinePromptStart = lineStart;
-    }
-    lineStart = newline + 1;
-    lineNumber += 1;
-  }
-  return lastGenuinePromptStart;
+  return findLastPromptBoundary(
+    contents,
+    beforeByteOffset,
+    (line, lineNumber) =>
+      isGenuineUserPrompt(
+        parseRecords(line, '<pi primary context>', lineNumber)[0],
+      ),
+  );
 }
 
 function parseRecords(
@@ -163,22 +154,6 @@ function parseRecords(
     }
   }
   return records;
-}
-
-function recordsBeforeFirstPromptAffectInteraction(
-  records: PiRecord[],
-): boolean {
-  for (const record of records) {
-    if (isGenuineUserPrompt(record)) return false;
-    if (
-      record.type === 'message' &&
-      (record.message?.role === 'assistant' ||
-        record.message?.role === 'toolResult')
-    ) {
-      return true;
-    }
-  }
-  return false;
 }
 
 function collectPendingInteractions(

@@ -1,3 +1,4 @@
+import { findLastPromptBoundary } from './jsonl-scan';
 import type { TokenBuckets } from './ingest-pipeline';
 import { canonicaliseModel } from '../model';
 
@@ -42,7 +43,6 @@ export interface NormalisedClaudeSession {
   startedAt: number | null;
   endedAt: number | null;
   interactions: NormalisedClaudeInteraction[];
-  requiresInteractionContext: boolean;
 }
 
 export interface ClaudeSubTokenUpdate {
@@ -97,29 +97,18 @@ export function readClaudeSubTokenUpdates(
   }));
 }
 
-export function findClaudeInteractionContextByteOffset(
+export function findClaudePromptBoundary(
   contents: Buffer,
   beforeByteOffset: number,
 ): number {
-  let lineStart = 0;
-  let lastGenuinePromptStart = 0;
-  let lineNumber = 1;
-  while (lineStart < beforeByteOffset) {
-    const newline = contents.indexOf(10, lineStart);
-    if (newline === -1 || newline >= beforeByteOffset) break;
-    const line = contents.subarray(lineStart, newline).toString('utf8');
-    if (line.length > 0) {
-      const [record] = parseRecords(
-        line,
-        '<Claude primary context>',
-        lineNumber,
-      );
-      if (isGenuineUserPrompt(record)) lastGenuinePromptStart = lineStart;
-    }
-    lineStart = newline + 1;
-    lineNumber += 1;
-  }
-  return lastGenuinePromptStart;
+  return findLastPromptBoundary(
+    contents,
+    beforeByteOffset,
+    (line, lineNumber) =>
+      isGenuineUserPrompt(
+        parseRecords(line, '<Claude primary context>', lineNumber)[0],
+      ),
+  );
 }
 
 function parseSubagentFiles(
@@ -215,19 +204,7 @@ function normaliseSession(
     startedAt,
     endedAt,
     interactions,
-    requiresInteractionContext:
-      recordsBeforeFirstPromptAffectInteraction(records),
   };
-}
-
-function recordsBeforeFirstPromptAffectInteraction(
-  records: ClaudeRecord[],
-): boolean {
-  for (const record of records) {
-    if (isGenuineUserPrompt(record)) return false;
-    if (record.type === 'assistant' || record.type === 'user') return true;
-  }
-  return false;
 }
 
 function collectPendingInteractions(

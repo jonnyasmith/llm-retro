@@ -41,7 +41,7 @@ A single execution of a Job — the persisted record of one attempt, carrying it
 _Avoid_: Task, invocation, execution, session.
 
 **Checkpoint**:
-The record of how far Ingestion has consumed each log file, so a re-run or a restart after failure resumes from where it stopped and never reprocesses an already-ingested record.
+The record of how far Ingestion has consumed each log file, so a re-run or a restart after failure resumes from where it stopped and never reprocesses an already-ingested record. Resumption restarts at a genuine prompt boundary at or before the Checkpoint — usually the last one, or an earlier one where a Harness needs the preceding Interaction for context (ADR-0010) — because an Interaction is bounded by prompts (ADR-0001) and the one the Checkpoint fell inside must be rebuilt whole.
 _Avoid_: Offset, cursor, watermark, bookmark.
 
 **Raw archive**:
