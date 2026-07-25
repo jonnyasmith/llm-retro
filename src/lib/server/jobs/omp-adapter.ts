@@ -4,6 +4,7 @@ import type {
   NormalisedInteraction,
   TokenBuckets,
 } from './ingest-pipeline';
+import { findLastPromptBoundary } from './jsonl-scan';
 import { canonicaliseModel } from '../model';
 
 interface OmpRecord {
@@ -45,7 +46,6 @@ export interface NormalisedOmpSession {
   startedAt: number | null;
   endedAt: number | null;
   interactions: NormalisedInteraction[];
-  requiresInteractionContext: boolean;
 }
 
 export interface OmpSubTokenUpdate {
@@ -120,8 +120,6 @@ export function readOmpSession(
     ).map((pending) =>
       normaliseInteraction(pending, records, agentLogs, filePath),
     ),
-    requiresInteractionContext:
-      recordsBeforeFirstPromptAffectInteraction(records),
   };
 }
 
@@ -146,25 +144,18 @@ export function readOmpSubTokenUpdates(
   );
 }
 
-export function findOmpInteractionContextByteOffset(
+export function findOmpPromptBoundary(
   contents: Buffer,
   beforeByteOffset: number,
 ): number {
-  let lineStart = 0;
-  let lastGenuinePromptStart = 0;
-  let lineNumber = 1;
-  while (lineStart < beforeByteOffset) {
-    const newline = contents.indexOf(10, lineStart);
-    if (newline === -1 || newline >= beforeByteOffset) break;
-    const line = contents.subarray(lineStart, newline).toString('utf8');
-    if (line.length > 0) {
-      const [record] = parseRecords(line, '<omp primary context>', lineNumber);
-      if (isGenuineUserPrompt(record)) lastGenuinePromptStart = lineStart;
-    }
-    lineStart = newline + 1;
-    lineNumber += 1;
-  }
-  return lastGenuinePromptStart;
+  return findLastPromptBoundary(
+    contents,
+    beforeByteOffset,
+    (line, lineNumber) =>
+      isGenuineUserPrompt(
+        parseRecords(line, '<omp primary context>', lineNumber)[0],
+      ),
+  );
 }
 
 function parseRecords(
@@ -213,22 +204,6 @@ function parseAgentLogs(
       records: parseRecords(contents, filePath),
     };
   });
-}
-
-function recordsBeforeFirstPromptAffectInteraction(
-  records: OmpRecord[],
-): boolean {
-  for (const record of records) {
-    if (isGenuineUserPrompt(record)) return false;
-    if (
-      record.type === 'message' &&
-      (record.message?.role === 'assistant' ||
-        record.message?.role === 'toolResult')
-    ) {
-      return true;
-    }
-  }
-  return false;
 }
 
 function collectPendingInteractions(

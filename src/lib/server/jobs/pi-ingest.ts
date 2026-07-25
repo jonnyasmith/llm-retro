@@ -1,7 +1,7 @@
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
-  findPiInteractionContextByteOffset,
+  findPiPromptBoundary,
   readPiSession,
   readPiSessionMetadata,
   type PiSessionMetadata,
@@ -47,7 +47,14 @@ const piIngestAdapter: IngestAdapter<PiSessionMetadata> = {
     const metadata = readPiSessionMetadata(primaryFilePath, primaryContents);
     return { stableSessionId: metadata.stableSessionId, metadata };
   },
+  findResumeBoundary(primaryContents, beforeByteOffset, metadata) {
+    return {
+      byteOffset: findPiPromptBoundary(primaryContents, beforeByteOffset),
+      metadata,
+    };
+  },
   parseSessionSlice: parsePiSessionSlice,
+  readSubTokenUpdates: () => [],
 };
 
 async function enumeratePiSourceFileGroups(logSources: string[]) {
@@ -60,32 +67,13 @@ async function enumeratePiSourceFileGroups(logSources: string[]) {
 function parsePiSessionSlice({
   primaryFilePath,
   primaryContents,
-  completePrimaryContents,
-  completeByteOffset,
-  startByteOffset,
   metadata,
 }: ParseSessionSliceInput<PiSessionMetadata>) {
-  let parsed = readPiSession(primaryFilePath, primaryContents, metadata);
-  if (parsed.requiresInteractionContext && startByteOffset > 0) {
-    const contextByteOffset = findPiInteractionContextByteOffset(
-      completePrimaryContents,
-      startByteOffset,
-    );
-    parsed = readPiSession(
-      primaryFilePath,
-      completePrimaryContents
-        .subarray(contextByteOffset, completeByteOffset)
-        .toString('utf8'),
-      metadata,
-    );
-  }
+  const parsed = readPiSession(primaryFilePath, primaryContents, metadata);
   return {
-    session: {
-      startedAt: parsed.startedAt,
-      endedAt: parsed.endedAt,
-      interactions: parsed.interactions,
-    },
-    interactionUpdates: [],
+    startedAt: parsed.startedAt,
+    endedAt: parsed.endedAt,
+    interactions: parsed.interactions,
   };
 }
 

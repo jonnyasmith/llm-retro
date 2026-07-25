@@ -10,10 +10,13 @@ import {
   type IngestSourceFileGroup,
   type InteractionUpdate,
   type NormalisedInteraction,
-  type ParsedSessionSlice,
+  type NormalisedSession,
   type ParseSessionSliceInput,
+  type ResumeBoundary,
+  type SubTokenUpdateInput,
   type TokenBuckets,
 } from './ingest-pipeline';
+import { findLastPromptBoundary } from './jsonl-scan';
 import {
   literalCwdProjectResolver,
   type CwdProjectResolver,
@@ -49,16 +52,21 @@ export async function cleanupPipelineFixtures() {
 
 export interface FakeMetadata {
   stableSessionId: string;
+  // Stands in for Codex's cumulative-token baseline: a resume boundary finder
+  // may refine it, and every Interaction the slice yields is offset by it.
+  outputTokenBase?: number;
 }
 
 /**
- * A canned-data adapter that satisfies the four-method IngestAdapter contract
+ * A canned-data adapter that satisfies the whole IngestAdapter contract
  * without any real Harness log format. Each behaviour under test is provoked by
  * varying the on-disk files and settings the pipeline reads, never by teaching
  * the adapter about the pipeline. A primary line is a JSON record describing one
  * Interaction (`{ key, cwd, ... }`); a line carrying `{ update, sub }` — in the
  * primary or any auxiliary file — is a sub-token backfill for an existing
  * Interaction, mirroring the auxiliary re-read the pipeline owns per ADR-0007.
+ * Every Interaction line is a prompt boundary, so a resumed run restarts at the
+ * last one, standing in for a Harness's `isGenuineUserPrompt`.
  */
 export function createFakeAdapter(
   overrides: {
@@ -67,6 +75,14 @@ export function createFakeAdapter(
       primaryFilePath: string,
       primaryContents: Buffer,
     ) => IdentifiedSession<FakeMetadata>;
+    findResumeBoundary?: (
+      primaryContents: Buffer,
+      beforeByteOffset: number,
+      metadata: FakeMetadata,
+    ) => ResumeBoundary<FakeMetadata>;
+    readSubTokenUpdates?: (
+      input: SubTokenUpdateInput<FakeMetadata>,
+    ) => InteractionUpdate[];
   } = {},
 ): IngestAdapter<FakeMetadata> {
   return {
@@ -74,7 +90,11 @@ export function createFakeAdapter(
     displayName: 'Fake',
     enumerateSourceFileGroups: overrides.enumerate ?? defaultEnumerate,
     identifySession: overrides.identify ?? defaultIdentify,
+    findResumeBoundary:
+      overrides.findResumeBoundary ?? defaultFindResumeBoundary,
     parseSessionSlice: defaultParse,
+    readSubTokenUpdates:
+      overrides.readSubTokenUpdates ?? defaultReadSubTokenUpdates,
   };
 }
 
@@ -162,39 +182,72 @@ function defaultIdentify(
   return { stableSessionId, metadata: { stableSessionId } };
 }
 
-function defaultParse(
-  input: ParseSessionSliceInput<FakeMetadata>,
-): ParsedSessionSlice {
+function defaultFindResumeBoundary(
+  primaryContents: Buffer,
+  beforeByteOffset: number,
+  metadata: FakeMetadata,
+): ResumeBoundary<FakeMetadata> {
+  return {
+    byteOffset: findLastPromptBoundary(
+      primaryContents,
+      beforeByteOffset,
+      (line) => typeof JSON.parse(line).update !== 'string',
+    ),
+    metadata,
+  };
+}
+
+function defaultParse({
+  primaryContents,
+  metadata,
+}: ParseSessionSliceInput<FakeMetadata>): NormalisedSession | null {
   const interactions: NormalisedInteraction[] = [];
-  const interactionUpdates: InteractionUpdate[] = [];
+  for (const record of parseFakeRecords(primaryContents)) {
+    if (typeof record.update === 'string') continue;
+    const interaction = toInteraction(record);
+    if (interaction.mainTokens.output !== null) {
+      interaction.mainTokens.output += metadata.outputTokenBase ?? 0;
+    }
+    interactions.push(interaction);
+  }
+  if (interactions.length === 0) return null;
+  const timestamps = interactions.map((interaction) => interaction.timestamp);
+  return {
+    startedAt: Math.min(...timestamps),
+    endedAt: Math.max(...timestamps),
+    interactions,
+  };
+}
+
+function defaultReadSubTokenUpdates({
+  completePrimaryContents,
+  auxiliaryFiles,
+}: SubTokenUpdateInput<FakeMetadata>): InteractionUpdate[] {
+  const updates: InteractionUpdate[] = [];
   const sources = [
-    input.primaryContents,
-    ...input.auxiliaryFiles.map((auxiliary) => auxiliary.contents),
+    completePrimaryContents,
+    ...auxiliaryFiles.map((auxiliary) => auxiliary.contents),
   ];
   for (const source of sources) {
-    for (const line of source.split('\n')) {
-      if (line.trim().length === 0) continue;
-      const record = JSON.parse(line);
+    for (const record of parseFakeRecords(source)) {
       if (typeof record.update === 'string') {
-        interactionUpdates.push({
+        updates.push({
           interactionKey: record.update,
           subTokens: toBuckets(record.sub),
         });
-      } else {
-        interactions.push(toInteraction(record));
       }
     }
   }
-  const timestamps = interactions.map((interaction) => interaction.timestamp);
-  const session =
-    interactions.length > 0
-      ? {
-          startedAt: Math.min(...timestamps),
-          endedAt: Math.max(...timestamps),
-          interactions,
-        }
-      : null;
-  return { session, interactionUpdates };
+  return updates;
+}
+
+function parseFakeRecords(
+  contents: string,
+): Array<FakeInteractionRecord & { update?: string }> {
+  return contents
+    .split('\n')
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line));
 }
 
 function toInteraction(record: FakeInteractionRecord): NormalisedInteraction {

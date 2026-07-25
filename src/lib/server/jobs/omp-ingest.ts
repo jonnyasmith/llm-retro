@@ -1,7 +1,7 @@
 import { readdir } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import {
-  findOmpInteractionContextByteOffset,
+  findOmpPromptBoundary,
   readOmpSession,
   readOmpSessionMetadata,
   readOmpSubTokenUpdates,
@@ -11,6 +11,7 @@ import {
   createIngestHandler,
   type IngestAdapter,
   type ParseSessionSliceInput,
+  type SubTokenUpdateInput,
 } from './ingest-pipeline';
 import type { CwdProjectResolver } from './project-resolver';
 import type { Job, JobHandler } from './types';
@@ -48,7 +49,14 @@ const ompIngestAdapter: IngestAdapter<OmpSessionMetadata> = {
     const metadata = readOmpSessionMetadata(primaryFilePath, primaryContents);
     return { stableSessionId: metadata.stableSessionId, metadata };
   },
+  findResumeBoundary(primaryContents, beforeByteOffset, metadata) {
+    return {
+      byteOffset: findOmpPromptBoundary(primaryContents, beforeByteOffset),
+      metadata,
+    };
+  },
   parseSessionSlice: parseOmpSessionSlice,
+  readSubTokenUpdates: readOmpSliceSubTokenUpdates,
 };
 
 async function enumerateOmpSourceFileGroups(logSources: string[]) {
@@ -64,57 +72,36 @@ async function enumerateOmpSourceFileGroups(logSources: string[]) {
 function parseOmpSessionSlice({
   primaryFilePath,
   primaryContents,
-  completePrimaryContents,
-  completeByteOffset,
-  startByteOffset,
   auxiliaryFiles,
   metadata,
 }: ParseSessionSliceInput<OmpSessionMetadata>) {
-  let parsed =
-    primaryContents.length > 0
-      ? readOmpSession(
-          primaryFilePath,
-          primaryContents,
-          auxiliaryFiles,
-          metadata,
-        )
-      : null;
-  if (parsed?.requiresInteractionContext === true && startByteOffset > 0) {
-    const contextByteOffset = findOmpInteractionContextByteOffset(
-      completePrimaryContents,
-      startByteOffset,
-    );
-    parsed = readOmpSession(
-      primaryFilePath,
-      completePrimaryContents
-        .subarray(contextByteOffset, completeByteOffset)
-        .toString('utf8'),
-      auxiliaryFiles,
-      metadata,
-    );
-  }
-
+  if (primaryContents.length === 0) return null;
+  const parsed = readOmpSession(
+    primaryFilePath,
+    primaryContents,
+    auxiliaryFiles,
+    metadata,
+  );
   return {
-    session:
-      parsed === null
-        ? null
-        : {
-            startedAt: parsed.startedAt,
-            endedAt: parsed.endedAt,
-            interactions: parsed.interactions,
-          },
-    interactionUpdates:
-      auxiliaryFiles.length === 0
-        ? []
-        : readOmpSubTokenUpdates(
-            primaryFilePath,
-            completePrimaryContents
-              .subarray(0, completeByteOffset)
-              .toString('utf8'),
-            auxiliaryFiles,
-            metadata,
-          ),
+    startedAt: parsed.startedAt,
+    endedAt: parsed.endedAt,
+    interactions: parsed.interactions,
   };
+}
+
+function readOmpSliceSubTokenUpdates({
+  primaryFilePath,
+  completePrimaryContents,
+  auxiliaryFiles,
+  metadata,
+}: SubTokenUpdateInput<OmpSessionMetadata>) {
+  if (auxiliaryFiles.length === 0) return [];
+  return readOmpSubTokenUpdates(
+    primaryFilePath,
+    completePrimaryContents,
+    auxiliaryFiles,
+    metadata,
+  );
 }
 
 async function discoverNestedAgentFiles(primaryFilePath: string) {

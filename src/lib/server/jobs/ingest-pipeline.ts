@@ -72,16 +72,20 @@ export interface IdentifiedSession<Metadata> {
 export interface ParseSessionSliceInput<Metadata> {
   primaryFilePath: string;
   primaryContents: string;
-  completePrimaryContents: Buffer;
-  completeByteOffset: number;
-  startByteOffset: number;
   auxiliaryFiles: IngestSourceContents[];
   metadata: Metadata;
 }
 
-export interface ParsedSessionSlice {
-  session: NormalisedSession | null;
-  interactionUpdates: InteractionUpdate[];
+export interface SubTokenUpdateInput<Metadata> {
+  primaryFilePath: string;
+  completePrimaryContents: string;
+  auxiliaryFiles: IngestSourceContents[];
+  metadata: Metadata;
+}
+
+export interface ResumeBoundary<Metadata> {
+  byteOffset: number;
+  metadata: Metadata;
 }
 
 export interface IngestAdapter<Metadata> {
@@ -94,9 +98,20 @@ export interface IngestAdapter<Metadata> {
     primaryFilePath: string,
     primaryContents: Buffer,
   ): IdentifiedSession<Metadata>;
+  // Metadata refined here reaches parseSessionSlice, whose slice starts at the
+  // returned offset; readSubTokenUpdates keeps the identified metadata, because
+  // it reads the whole primary rather than the resumed window.
+  findResumeBoundary(
+    primaryContents: Buffer,
+    beforeByteOffset: number,
+    metadata: Metadata,
+  ): ResumeBoundary<Metadata>;
   parseSessionSlice(
     input: ParseSessionSliceInput<Metadata>,
-  ): ParsedSessionSlice;
+  ): NormalisedSession | null;
+  readSubTokenUpdates(
+    input: SubTokenUpdateInput<Metadata>,
+  ): InteractionUpdate[];
 }
 
 type ArchivedFileRename = (oldPath: string, newPath: string) => Promise<void>;
@@ -197,26 +212,39 @@ export function createIngestHandler<Metadata>(
           storedCheckpoint !== undefined &&
           primarySnapshot.fileSize > storedCheckpoint.fileSize &&
           storedCheckpoint.lastCompleteRecordByteOffset <= completeByteOffset;
-        const startByteOffset = metadataMatches
+        const resumeByteOffset = metadataMatches
           ? completeByteOffset
           : canResumeGrowth
             ? storedCheckpoint.lastCompleteRecordByteOffset
             : 0;
-        const parsed = adapter.parseSessionSlice({
+        const resumingPrimary = resumeByteOffset > 0;
+        const boundary = resumingPrimary
+          ? adapter.findResumeBoundary(
+              primarySnapshot.contents,
+              resumeByteOffset,
+              metadata,
+            )
+          : { byteOffset: 0, metadata };
+        const auxiliaryFiles = auxiliarySnapshots.map(toSourceContents);
+        const session = adapter.parseSessionSlice({
           primaryFilePath: filePath,
           primaryContents: primarySnapshot.contents
-            .subarray(startByteOffset, completeByteOffset)
+            .subarray(boundary.byteOffset, completeByteOffset)
             .toString('utf8'),
-          completePrimaryContents: primarySnapshot.contents,
-          completeByteOffset,
-          startByteOffset,
-          auxiliaryFiles: auxiliarySnapshots.map(toSourceContents),
+          auxiliaryFiles,
+          metadata: boundary.metadata,
+        });
+        const interactionUpdates = adapter.readSubTokenUpdates({
+          primaryFilePath: filePath,
+          completePrimaryContents: primarySnapshot.contents
+            .subarray(0, completeByteOffset)
+            .toString('utf8'),
+          auxiliaryFiles,
           metadata,
         });
 
         const cwds = new Set(
-          parsed.session?.interactions.map((interaction) => interaction.cwd) ??
-            [],
+          session?.interactions.map((interaction) => interaction.cwd) ?? [],
         );
         for (const cwd of cwds) {
           if (!resolvedProjects.has(cwd)) {
@@ -229,11 +257,12 @@ export function createIngestHandler<Metadata>(
           adapter,
           stableSessionId,
           filePath,
-          parsed,
+          session,
+          interactionUpdates,
           resolvedProjects,
           settings.timezone,
           existingSession,
-          startByteOffset > 0,
+          resumingPrimary,
           {
             lastCompleteRecordByteOffset: completeByteOffset,
             fileSize: primarySnapshot.fileSize,
@@ -365,7 +394,8 @@ function storeSessionSlice<Metadata>(
   adapter: IngestAdapter<Metadata>,
   stableSessionId: string,
   logFilePath: string,
-  parsed: ParsedSessionSlice,
+  session: NormalisedSession | null,
+  interactionUpdates: InteractionUpdate[],
   resolvedProjects: Map<string, ResolvedProject>,
   timezone: string,
   existingSession: typeof sessions.$inferSelect | undefined,
@@ -379,7 +409,7 @@ function storeSessionSlice<Metadata>(
   database.transaction((transaction) => {
     const projectIds = new Map<string, number>();
     const sessionCwds = new Set(
-      parsed.session?.interactions.map((interaction) => interaction.cwd) ?? [],
+      session?.interactions.map((interaction) => interaction.cwd) ?? [],
     );
     for (const cwd of sessionCwds) {
       const resolvedProject = resolvedProjects.get(cwd);
@@ -405,19 +435,16 @@ function storeSessionSlice<Metadata>(
       projectIds.set(cwd, project.id);
     }
 
-    if (parsed.session) {
+    if (session) {
       const startedAt = resumingPrimary
         ? minimumTimestamp(
             existingSession?.startedAt ?? null,
-            parsed.session.startedAt,
+            session.startedAt,
           )
-        : parsed.session.startedAt;
+        : session.startedAt;
       const endedAt = resumingPrimary
-        ? maximumTimestamp(
-            existingSession?.endedAt ?? null,
-            parsed.session.endedAt,
-          )
-        : parsed.session.endedAt;
+        ? maximumTimestamp(existingSession?.endedAt ?? null, session.endedAt)
+        : session.endedAt;
       transaction
         .insert(sessions)
         .values({
@@ -441,7 +468,7 @@ function storeSessionSlice<Metadata>(
         .run();
     }
 
-    const session = transaction
+    const storedSession = transaction
       .select({ id: sessions.id })
       .from(sessions)
       .where(
@@ -451,20 +478,20 @@ function storeSessionSlice<Metadata>(
         ),
       )
       .get();
-    if (!session && (parsed.session || parsed.interactionUpdates.length > 0)) {
+    if (!storedSession && (session || interactionUpdates.length > 0)) {
       throw new Error(
         `${adapter.displayName} Session was not stored: ${stableSessionId}`,
       );
     }
-    if (session && !resumingPrimary) {
+    if (storedSession && !resumingPrimary) {
       transaction
         .delete(interactions)
-        .where(eq(interactions.sessionId, session.id))
+        .where(eq(interactions.sessionId, storedSession.id))
         .run();
     }
 
-    for (const interaction of parsed.session?.interactions ?? []) {
-      if (!session) {
+    for (const interaction of session?.interactions ?? []) {
+      if (!storedSession) {
         throw new Error(
           `${adapter.displayName} Session was not stored: ${stableSessionId}`,
         );
@@ -494,7 +521,7 @@ function storeSessionSlice<Metadata>(
       transaction
         .insert(interactions)
         .values({
-          sessionId: session.id,
+          sessionId: storedSession.id,
           interactionKey: interaction.interactionKey,
           harness: adapter.harness,
           ...derived,
@@ -506,8 +533,8 @@ function storeSessionSlice<Metadata>(
         .run();
     }
 
-    if (session) {
-      for (const update of parsed.interactionUpdates) {
+    if (storedSession) {
+      for (const update of interactionUpdates) {
         transaction
           .update(interactions)
           .set({
@@ -518,18 +545,18 @@ function storeSessionSlice<Metadata>(
           })
           .where(
             and(
-              eq(interactions.sessionId, session.id),
+              eq(interactions.sessionId, storedSession.id),
               eq(interactions.interactionKey, update.interactionKey),
             ),
           )
           .run();
       }
 
-      if (parsed.session) {
+      if (session) {
         const interactionProjects = transaction
           .select({ projectId: interactions.projectId })
           .from(interactions)
-          .where(eq(interactions.sessionId, session.id))
+          .where(eq(interactions.sessionId, storedSession.id))
           .all();
         const firstProjectId = interactionProjects[0]?.projectId;
         const sessionProjectId =
@@ -542,7 +569,7 @@ function storeSessionSlice<Metadata>(
         transaction
           .update(sessions)
           .set({ projectId: sessionProjectId })
-          .where(eq(sessions.id, session.id))
+          .where(eq(sessions.id, storedSession.id))
           .run();
       }
     }

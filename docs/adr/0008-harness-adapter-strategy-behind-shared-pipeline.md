@@ -5,7 +5,7 @@ Ingesting four Harnesses whose logs disagree on topology, identity, and structur
 ## The seam
 
 - **Adapter (per Harness) owns** — enumerating its source-file groups (its directory topology, and Codex's relocation into `archived_sessions`), deriving the `stableSessionId`, and parsing a text slice into a normalised Session (genuine-prompt detection, token extraction, sub-agent fold-up + main/sub split, the stable `interaction_key`).
-- **Pipeline owns** — stable snapshot read (re-stat before/after to catch a file mutating mid-read), byte-offset checkpoint + incremental slice + resume-on-growth, raw archive, store writes (session/interaction/project upsert on the idempotency key), and cross-run dedup.
+- **Pipeline owns** — stable snapshot read (re-stat before/after to catch a file mutating mid-read), byte-offset checkpoint + incremental slice + resume-on-growth, raw archive, store writes (session/interaction/project upsert on the idempotency key), and cross-run dedup. Resumption included: the pipeline asks the adapter only which prompt boundary at or before the Checkpoint a resumed slice must start from, then slices once, so no adapter computes a slice of its own.
 
 ## Absence is the null object
 

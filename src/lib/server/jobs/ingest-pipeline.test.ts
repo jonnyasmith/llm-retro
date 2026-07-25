@@ -111,11 +111,17 @@ describe('Ingest pipeline', () => {
     }
   });
 
-  it('skips consumed bytes, skips unchanged files, and resumes on growth', async () => {
+  it('skips consumed bytes, skips unchanged files, and resumes at the last boundary', async () => {
     const fixture = await createPipelineFixture();
     const sessionPath = join(fixture.logSource, 'growth.log');
     await writeLines(sessionPath, [
       { key: 'g-1', cwd: '/repo/one', timestamp: BASE, main: { output: 1 } },
+      {
+        key: 'g-2',
+        cwd: '/repo/one',
+        timestamp: BASE + 1_000,
+        main: { output: 2 },
+      },
     ]);
     const log = vi.fn();
 
@@ -124,18 +130,18 @@ describe('Ingest pipeline', () => {
       fixture.database
         .update(interactions)
         .set({ model: 'sentinel-not-reparsed' })
-        .where(eq(interactions.interactionKey, 'g-1'))
         .run();
 
       await runPipeline(createFakeAdapter(), fixture.database, { log });
       expect(log).toHaveBeenCalledWith(`Skipped unchanged ${sessionPath}`);
       expect(fixture.database.select().from(interactions).all()).toMatchObject([
         { interactionKey: 'g-1', model: 'sentinel-not-reparsed' },
+        { interactionKey: 'g-2', model: 'sentinel-not-reparsed' },
       ]);
 
       await appendFile(
         sessionPath,
-        `${JSON.stringify({ key: 'g-2', cwd: '/repo/one', timestamp: BASE + 1_000 })}\n`,
+        `${JSON.stringify({ key: 'g-3', cwd: '/repo/one', timestamp: BASE + 2_000 })}\n`,
       );
       await runPipeline(createFakeAdapter(), fixture.database);
 
@@ -144,15 +150,164 @@ describe('Ingest pipeline', () => {
         .from(interactions)
         .orderBy(interactions.interactionKey)
         .all();
+      // The resumed slice starts at the last boundary, so g-1 is genuinely
+      // consumed while g-2 is re-parsed and overwrites its stored row.
       expect(stored).toMatchObject([
         { interactionKey: 'g-1', model: 'sentinel-not-reparsed' },
-        { interactionKey: 'g-2' },
+        { interactionKey: 'g-2', model: 'fake-model' },
+        { interactionKey: 'g-3' },
       ]);
       const grown = await stat(sessionPath);
       expect(fixture.database.select().from(checkpoints).get()).toMatchObject({
         lastCompleteRecordByteOffset: grown.size,
         fileSize: grown.size,
       });
+    } finally {
+      fixture.sqlite.close();
+    }
+  });
+
+  it('rewrites a re-emitted Interaction to identical values, sub-tokens included', async () => {
+    const fixture = await createPipelineFixture();
+    const sessionPath = join(fixture.logSource, 'folded.log');
+    const auxiliaryPath = join(fixture.logSource, 'folded.aux');
+    await writeLines(sessionPath, [
+      { key: 'f-1', cwd: '/repo/one', timestamp: BASE, main: { output: 1 } },
+      {
+        key: 'f-2',
+        cwd: '/repo/one',
+        timestamp: BASE + 1_000,
+        main: { output: 2 },
+      },
+    ]);
+    await writeLines(auxiliaryPath, [
+      '{"update":"f-1","sub":{"output":9}}',
+      '{"update":"f-2","sub":{"output":3}}',
+    ]);
+    // An auxiliary file defeats the unchanged-file shortcut, so every run
+    // re-emits the Interaction the resume boundary sweeps back into the window.
+    const adapter = createFakeAdapter({
+      enumerate: async () => [
+        { primaryFilePath: sessionPath, auxiliaryFilePaths: [auxiliaryPath] },
+      ],
+    });
+
+    try {
+      await runPipeline(adapter, fixture.database);
+      const afterFirstRun = fixture.database
+        .select()
+        .from(interactions)
+        .orderBy(interactions.interactionKey)
+        .all();
+      expect(afterFirstRun).toMatchObject([
+        { interactionKey: 'f-1', mainOutputTokens: 1, subOutputTokens: 9 },
+        { interactionKey: 'f-2', mainOutputTokens: 2, subOutputTokens: 3 },
+      ]);
+
+      // Degrade only the Interaction the boundary sweeps back in: run two must
+      // restore it exactly, leaving the consumed Interaction before it alone.
+      fixture.database
+        .update(interactions)
+        .set({ model: 'sentinel-overwritten', subOutputTokens: null })
+        .where(eq(interactions.interactionKey, 'f-2'))
+        .run();
+      await runPipeline(adapter, fixture.database);
+
+      expect(
+        fixture.database
+          .select()
+          .from(interactions)
+          .orderBy(interactions.interactionKey)
+          .all(),
+      ).toEqual(afterFirstRun);
+    } finally {
+      fixture.sqlite.close();
+    }
+  });
+
+  it('re-reads the whole primary when the adapter reports no earlier boundary', async () => {
+    const fixture = await createPipelineFixture();
+    const sessionPath = join(fixture.logSource, 'no-boundary.log');
+    await writeLines(sessionPath, [
+      { key: 'n-1', cwd: '/repo/one', timestamp: BASE, main: { output: 1 } },
+    ]);
+    const adapter = createFakeAdapter({
+      findResumeBoundary: (_contents, _beforeByteOffset, metadata) => ({
+        byteOffset: 0,
+        metadata,
+      }),
+    });
+
+    try {
+      await runPipeline(adapter, fixture.database);
+      fixture.database
+        .update(interactions)
+        .set({ model: 'sentinel-not-reparsed' })
+        .run();
+      await appendFile(
+        sessionPath,
+        `${JSON.stringify({ key: 'n-2', cwd: '/repo/one', timestamp: BASE + 1_000 })}\n`,
+      );
+      await runPipeline(adapter, fixture.database);
+
+      expect(
+        fixture.database
+          .select()
+          .from(interactions)
+          .orderBy(interactions.interactionKey)
+          .all(),
+      ).toMatchObject([
+        { interactionKey: 'n-1', model: 'fake-model' },
+        { interactionKey: 'n-2', model: 'fake-model' },
+      ]);
+    } finally {
+      fixture.sqlite.close();
+    }
+  });
+
+  it('threads refined boundary metadata into the slice but not the sub-token pass', async () => {
+    const fixture = await createPipelineFixture();
+    const sessionPath = join(fixture.logSource, 'refined.log');
+    await writeLines(sessionPath, [
+      { key: 'r-1', cwd: '/repo/one', timestamp: BASE, main: { output: 1 } },
+    ]);
+    const subTokenMetadata: unknown[] = [];
+    const adapter = createFakeAdapter({
+      findResumeBoundary: (_contents, _beforeByteOffset, metadata) => ({
+        byteOffset: 0,
+        metadata: { ...metadata, outputTokenBase: 100 },
+      }),
+      readSubTokenUpdates: (input) => {
+        subTokenMetadata.push(input.metadata);
+        return [];
+      },
+    });
+
+    try {
+      await runPipeline(adapter, fixture.database);
+      await appendFile(
+        sessionPath,
+        `${JSON.stringify({ key: 'r-2', cwd: '/repo/one', timestamp: BASE + 1_000, main: { output: 2 } })}\n`,
+      );
+      await runPipeline(adapter, fixture.database);
+
+      expect(
+        fixture.database
+          .select({
+            interactionKey: interactions.interactionKey,
+            mainOutputTokens: interactions.mainOutputTokens,
+          })
+          .from(interactions)
+          .orderBy(interactions.interactionKey)
+          .all(),
+      ).toEqual([
+        { interactionKey: 'r-1', mainOutputTokens: 101 },
+        { interactionKey: 'r-2', mainOutputTokens: 102 },
+      ]);
+      expect(subTokenMetadata).toEqual([
+        { stableSessionId: 'refined' },
+        { stableSessionId: 'refined' },
+      ]);
     } finally {
       fixture.sqlite.close();
     }

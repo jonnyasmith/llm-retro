@@ -1,3 +1,4 @@
+import { scanRecordLines } from './jsonl-scan';
 import type { NormalisedInteraction, TokenBuckets } from './ingest-pipeline';
 import { canonicaliseModel } from '../model';
 
@@ -20,6 +21,9 @@ interface PendingInteraction {
 export interface CodexSessionMetadata {
   stableSessionId: string;
   timestamp: number | null;
+  // Codex tokens are session-cumulative (ADR-0010), so a resumed slice needs the
+  // running total reached before its first record; a full read starts at null.
+  previousTotalTokenUsage: number | null;
 }
 
 export interface NormalisedCodexSession {
@@ -63,6 +67,7 @@ export function readCodexSessionMetadata(
     timestamp:
       parseTimestamp(record.timestamp) ??
       parseTimestamp(record.payload?.timestamp),
+    previousTotalTokenUsage: null,
   };
 }
 
@@ -70,7 +75,6 @@ export function readCodexSession(
   filePath: string,
   contents: string,
   metadata: CodexSessionMetadata,
-  initialTotalTokenUsage: number | null = null,
 ): NormalisedCodexSession | null {
   const records = parseRecords(contents, filePath);
   let startedAt = metadata.timestamp;
@@ -85,7 +89,7 @@ export function readCodexSession(
   const interactions: NormalisedInteraction[] = [];
   let firstTurnCwd: string | null = null;
   let pending: PendingInteraction | null = null;
-  let maximumTotalTokenUsage = initialTotalTokenUsage;
+  let maximumTotalTokenUsage = metadata.previousTotalTokenUsage;
   const finishPending = () => {
     if (
       pending !== null &&
@@ -147,22 +151,19 @@ export function readCodexSession(
   return { startedAt, endedAt, interactions };
 }
 
-export function findCodexPromptResumeContext(
+export function findCodexResumeBoundary(
   contents: Buffer,
   beforeByteOffset: number,
 ): { byteOffset: number; previousTotalTokenUsage: number | null } {
-  let lineStart = 0;
-  let lineNumber = 1;
   let maximumTotalTokenUsage: number | null = null;
   let previousPrompt:
     { byteOffset: number; previousTotalTokenUsage: number | null } | undefined;
   let latestPrompt:
     { byteOffset: number; previousTotalTokenUsage: number | null } | undefined;
-  while (lineStart < beforeByteOffset) {
-    const newline = contents.indexOf(10, lineStart);
-    if (newline === -1 || newline >= beforeByteOffset) break;
-    const line = contents.subarray(lineStart, newline).toString('utf8');
-    if (line.length > 0) {
+  scanRecordLines(
+    contents,
+    beforeByteOffset,
+    (line, lineNumber, byteOffset) => {
       const [record] = parseRecords(
         line,
         '<Codex primary context>',
@@ -171,7 +172,7 @@ export function findCodexPromptResumeContext(
       if (isGenuinePrompt(record)) {
         previousPrompt = latestPrompt;
         latestPrompt = {
-          byteOffset: lineStart,
+          byteOffset,
           previousTotalTokenUsage: maximumTotalTokenUsage,
         };
       } else if (
@@ -186,10 +187,8 @@ export function findCodexPromptResumeContext(
           maximumTotalTokenUsage = total;
         }
       }
-    }
-    lineStart = newline + 1;
-    lineNumber += 1;
-  }
+    },
+  );
   return previousPrompt ?? { byteOffset: 0, previousTotalTokenUsage: null };
 }
 

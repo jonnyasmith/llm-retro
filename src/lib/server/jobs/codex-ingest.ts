@@ -1,16 +1,12 @@
 import { readdir } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import {
-  findCodexPromptResumeContext,
+  findCodexResumeBoundary,
   readCodexSession,
   readCodexSessionMetadata,
   type CodexSessionMetadata,
 } from './codex-adapter';
-import {
-  createIngestHandler,
-  type IngestAdapter,
-  type ParseSessionSliceInput,
-} from './ingest-pipeline';
+import { createIngestHandler, type IngestAdapter } from './ingest-pipeline';
 import type { CwdProjectResolver } from './project-resolver';
 import type { Job, JobHandler } from './types';
 
@@ -40,7 +36,20 @@ const codexIngestAdapter: IngestAdapter<CodexSessionMetadata> = {
     const metadata = readCodexSessionMetadata(primaryFilePath, primaryContents);
     return { stableSessionId: metadata.stableSessionId, metadata };
   },
-  parseSessionSlice: parseCodexSessionSlice,
+  findResumeBoundary(primaryContents, beforeByteOffset, metadata) {
+    const boundary = findCodexResumeBoundary(primaryContents, beforeByteOffset);
+    return {
+      byteOffset: boundary.byteOffset,
+      metadata: {
+        ...metadata,
+        previousTotalTokenUsage: boundary.previousTotalTokenUsage,
+      },
+    };
+  },
+  parseSessionSlice({ primaryFilePath, primaryContents, metadata }) {
+    return readCodexSession(primaryFilePath, primaryContents, metadata);
+  },
+  readSubTokenUpdates: () => [],
 };
 
 async function enumerateCodexSourceFileGroups(logSources: string[]) {
@@ -52,37 +61,6 @@ async function enumerateCodexSourceFileGroups(logSources: string[]) {
     primaryFilePath,
     auxiliaryFilePaths: [],
   }));
-}
-
-function parseCodexSessionSlice({
-  primaryFilePath,
-  primaryContents,
-  completePrimaryContents,
-  completeByteOffset,
-  startByteOffset,
-  metadata,
-}: ParseSessionSliceInput<CodexSessionMetadata>) {
-  let previousTotalTokenUsage: number | null = null;
-  if (startByteOffset > 0) {
-    const resumeContext = findCodexPromptResumeContext(
-      completePrimaryContents,
-      startByteOffset,
-    );
-    primaryContents = completePrimaryContents
-      .subarray(resumeContext.byteOffset, completeByteOffset)
-      .toString('utf8');
-    previousTotalTokenUsage = resumeContext.previousTotalTokenUsage;
-  }
-  const session = readCodexSession(
-    primaryFilePath,
-    primaryContents,
-    metadata,
-    previousTotalTokenUsage,
-  );
-  return {
-    session,
-    interactionUpdates: [],
-  };
 }
 
 async function discoverSessionFiles(logSources: string[]): Promise<string[]> {

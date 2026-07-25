@@ -12,5 +12,6 @@ We keep that shape: **the Checkpoint tracks the primary session file only.** Aux
 
 - The Checkpoint stays a per-Session concept, matching the domain glossary and the S2 schema — no change to the store.
 - Correctness of re-folded sub-agent tokens rests entirely on the Interaction idempotency key, which therefore must be exact; the checkpoint is a resumption optimisation for the main file only, never a correctness mechanism for auxiliary files.
+- The primary file is read twice per ingest: once as a checkpointed slice, for Interaction extraction, and once in full, for the sub-agent token fold whose auxiliary counterpart is already read in full. The full read is safe only because of the same Interaction idempotency key; it does not weaken the Checkpoint, which still bounds every Interaction the run extracts.
 - A sub-agent still running when ingest starts has no completed tool_result to correlate it to its spawning Interaction, so it is skipped and folded on a later re-run — never guessed.
 - If a Harness ever writes an auxiliary file large enough that wholesale re-reads hurt, per-file checkpoints become worth revisiting; the idempotency-backed model means that change is contained.
