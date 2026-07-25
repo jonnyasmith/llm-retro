@@ -2,34 +2,22 @@ import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { interactions } from '../database/schema';
+import { claudeIngestAdapter } from './claude-adapter';
+import { createIngestHandler } from './ingest-pipeline';
+import { literalCwdProjectResolver } from './project-resolver';
 import {
-  createClaudeIngestHandler,
-  createClaudeIngestJob,
-  literalCwdProjectResolver,
-} from './claude-ingest';
-import {
-  appendJsonLines,
-  cleanupClaudeIngestFixtures,
-  createClaudeIngestFixture as createFixture,
+  cleanupIngestFixtures,
+  createIngestFixture,
   writeJsonLines,
-} from './claude-ingest-fixture';
+} from './ingest-fixture';
 
-const TOTALS_COLUMNS = {
-  interactionKey: interactions.interactionKey,
-  model: interactions.model,
-  mainInputTokens: interactions.mainInputTokens,
-  mainOutputTokens: interactions.mainOutputTokens,
-  mainCacheReadTokens: interactions.mainCacheReadTokens,
-  mainCacheWriteTokens: interactions.mainCacheWriteTokens,
-};
+afterEach(cleanupIngestFixtures);
 
-afterEach(cleanupClaudeIngestFixtures);
-
-describe('Claude ingest parsing', () => {
+describe('Claude log grammar', () => {
   it('keeps only genuine responded prompts with canonical models and summed usage', async () => {
-    const fixture = await createFixture();
+    const fixture = await createIngestFixture('claude');
     const sessionId = '11111111-1111-4111-8111-111111111111';
-    const sessionPath = join(fixture.projectDirectory, `${sessionId}.jsonl`);
+    const sessionPath = fixture.sessionPath(sessionId);
     await writeJsonLines(sessionPath, [
       {
         type: 'system',
@@ -142,7 +130,7 @@ describe('Claude ingest parsing', () => {
     // A sibling subagents directory is auxiliary, never a primary session file:
     // its records must not surface as their own Interaction.
     const ignoredDirectory = join(
-      fixture.projectDirectory,
+      fixture.sessionDirectory,
       sessionId,
       'subagents',
     );
@@ -156,7 +144,7 @@ describe('Claude ingest parsing', () => {
         message: { content: 'do not enumerate me' },
       },
     ]);
-    const handler = createClaudeIngestHandler({
+    const handler = createIngestHandler(claudeIngestAdapter, {
       resolveProject: literalCwdProjectResolver,
     });
 
@@ -193,143 +181,5 @@ describe('Claude ingest parsing', () => {
     } finally {
       fixture.sqlite.close();
     }
-  });
-
-  it('rebuilds an in-flight Interaction consistently when a session grows', async () => {
-    const fixture = await createFixture();
-    const fullFixture = await createFixture();
-    const sessionId = '33333333-3333-4333-8333-333333333333';
-    const sessionPath = join(fixture.projectDirectory, `${sessionId}.jsonl`);
-    const fullSessionPath = join(
-      fullFixture.projectDirectory,
-      `${sessionId}.jsonl`,
-    );
-    const initialRecords = [
-      {
-        type: 'system',
-        uuid: 'system-1',
-        cwd: '/work/alpha',
-        timestamp: '2025-01-01T19:59:00.000Z',
-      },
-      {
-        type: 'user',
-        uuid: 'complete-prompt',
-        cwd: '/work/alpha',
-        timestamp: '2025-01-01T20:00:00.000Z',
-        message: { content: 'Build the tracer' },
-      },
-      {
-        type: 'assistant',
-        uuid: 'complete-assistant',
-        timestamp: '2025-01-01T20:00:10.000Z',
-        message: {
-          model: 'claude-sonnet-4-6-20260217',
-          usage: { input_tokens: 7, output_tokens: 7 },
-        },
-      },
-      {
-        type: 'user',
-        uuid: 'growing-prompt',
-        cwd: '/work/alpha',
-        timestamp: '2025-01-01T20:10:00.000Z',
-        message: { content: 'Review it' },
-      },
-      {
-        type: 'assistant',
-        uuid: 'growing-assistant-1',
-        timestamp: '2025-01-01T20:10:10.000Z',
-        message: {
-          model: 'claude-haiku-4-5-20251001',
-          usage: {
-            input_tokens: 10,
-            output_tokens: 2,
-            cache_creation_input_tokens: 3,
-          },
-        },
-      },
-    ];
-    const appendedRecords = [
-      {
-        type: 'assistant',
-        uuid: 'growing-assistant-2',
-        timestamp: '2025-01-01T20:10:20.000Z',
-        message: {
-          model: 'claude-opus-4-8[1m]',
-          usage: { output_tokens: 20, cache_read_input_tokens: 5 },
-        },
-      },
-    ];
-    await writeJsonLines(sessionPath, initialRecords);
-    const handler = createClaudeIngestHandler({
-      resolveProject: literalCwdProjectResolver,
-    });
-
-    try {
-      await handler.run(null, {
-        correlationId: 'before-growth',
-        database: fixture.database,
-        progress: vi.fn(),
-        log: vi.fn(),
-      });
-      await appendJsonLines(sessionPath, appendedRecords);
-      await handler.run(null, {
-        correlationId: 'after-growth',
-        database: fixture.database,
-        progress: vi.fn(),
-        log: vi.fn(),
-      });
-      await writeJsonLines(fullSessionPath, [
-        ...initialRecords,
-        ...appendedRecords,
-      ]);
-      await handler.run(null, {
-        correlationId: 'full-ingest',
-        database: fullFixture.database,
-        progress: vi.fn(),
-        log: vi.fn(),
-      });
-
-      const resumedTotals = fixture.database
-        .select(TOTALS_COLUMNS)
-        .from(interactions)
-        .all();
-      expect(resumedTotals).toEqual(
-        fullFixture.database.select(TOTALS_COLUMNS).from(interactions).all(),
-      );
-      expect(resumedTotals).toEqual([
-        {
-          interactionKey: 'complete-prompt',
-          model: 'claude-sonnet-4-6',
-          mainInputTokens: 7,
-          mainOutputTokens: 7,
-          mainCacheReadTokens: null,
-          mainCacheWriteTokens: null,
-        },
-        {
-          interactionKey: 'growing-prompt',
-          model: 'claude-opus-4-8',
-          mainInputTokens: 10,
-          mainOutputTokens: 22,
-          mainCacheReadTokens: 5,
-          mainCacheWriteTokens: 3,
-        },
-      ]);
-    } finally {
-      fixture.sqlite.close();
-      fullFixture.sqlite.close();
-    }
-  });
-
-  it('exposes the harness-scoped empty-payload Job and literal cwd resolver', async () => {
-    expect(createClaudeIngestJob()).toEqual({
-      identity: { type: 'ingest', scope: 'claude' },
-      payload: null,
-    });
-    await expect(
-      literalCwdProjectResolver('/deleted/project'),
-    ).resolves.toEqual({
-      rootPath: '/deleted/project',
-      gitRemoteUrl: null,
-    });
   });
 });

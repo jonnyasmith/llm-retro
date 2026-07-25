@@ -9,7 +9,7 @@ import {
 } from 'node:fs/promises';
 import { basename, dirname, join, parse, relative, resolve } from 'node:path';
 import { and, eq } from 'drizzle-orm';
-import type { Harness } from '../database/store';
+import { harnessLabels, type Harness } from '../../jobs/contracts';
 import {
   checkpoints,
   interactions,
@@ -23,6 +23,7 @@ import {
   type CwdProjectResolver,
   type ResolvedProject,
 } from './project-resolver';
+import { isMissingPath } from './missing-path';
 import type { JobHandler } from './types';
 
 export interface TokenBuckets {
@@ -90,7 +91,6 @@ export interface ResumeBoundary<Metadata> {
 
 export interface IngestAdapter<Metadata> {
   harness: Harness;
-  displayName: string;
   enumerateSourceFileGroups(
     logSources: string[],
   ): Promise<IngestSourceFileGroup[]>;
@@ -139,7 +139,7 @@ export function createIngestHandler<Metadata>(
       const resolvedProjects = new Map<string, ResolvedProject>();
       context.progress({ filesTotal: sourceFileGroups.length, filesDone: 0 });
       context.log(
-        `Found ${sourceFileGroups.length} ${adapter.displayName} session files`,
+        `Found ${sourceFileGroups.length} ${harnessLabels[adapter.harness]} session files`,
       );
 
       for (const [index, sourceFileGroup] of sourceFileGroups.entries()) {
@@ -480,7 +480,7 @@ function storeSessionSlice<Metadata>(
       .get();
     if (!storedSession && (session || interactionUpdates.length > 0)) {
       throw new Error(
-        `${adapter.displayName} Session was not stored: ${stableSessionId}`,
+        `${harnessLabels[adapter.harness]} Session was not stored: ${stableSessionId}`,
       );
     }
     if (storedSession && !resumingPrimary) {
@@ -493,7 +493,7 @@ function storeSessionSlice<Metadata>(
     for (const interaction of session?.interactions ?? []) {
       if (!storedSession) {
         throw new Error(
-          `${adapter.displayName} Session was not stored: ${stableSessionId}`,
+          `${harnessLabels[adapter.harness]} Session was not stored: ${stableSessionId}`,
         );
       }
       const projectId = projectIds.get(interaction.cwd);
@@ -583,15 +583,6 @@ function storeSessionSlice<Metadata>(
       })
       .run();
   });
-}
-
-function isMissingPath(cause: unknown): boolean {
-  return (
-    typeof cause === 'object' &&
-    cause !== null &&
-    'code' in cause &&
-    cause.code === 'ENOENT'
-  );
 }
 
 function minimumTimestamp(left: number | null, right: number | null) {

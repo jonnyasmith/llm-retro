@@ -2,16 +2,20 @@
   import IngestJob from '$lib/components/IngestJob.svelte';
   import JobRunHistory from '$lib/components/JobRunHistory.svelte';
   import PageIntro from '$lib/components/PageIntro.svelte';
+  import { harnesses, harnessLabels } from '$lib/jobs/contracts';
   import type { PageProps } from './$types';
 
   let { data }: PageProps = $props();
+  const harnessList = new Intl.ListFormat('en-GB').format(
+    harnesses.map((harness) => harnessLabels[harness]),
+  );
 </script>
 
 <svelte:head>
   <title>Jobs · LLM Retro</title>
   <meta
     name="description"
-    content="Run Claude, Codex, pi, and omp ingestion and watch progress and history."
+    content="Run {harnessList} ingestion and watch progress and history."
   />
 </svelte:head>
 
@@ -19,33 +23,19 @@
   <PageIntro
     eyebrow="Local-first work tracking"
     title="Jobs"
-    description="Bring Claude, Codex, pi, and omp activity into LLM Retro and watch every run from start to finish."
+    description="Bring {harnessList} activity into LLM Retro and watch every run from start to finish."
   />
 
-  <IngestJob
-    harness="claude"
-    runs={data.claudeRuns}
-    activeCorrelationId={data.claudeActiveCorrelationId}
-  />
-  <IngestJob
-    harness="codex"
-    runs={data.codexRuns}
-    activeCorrelationId={data.codexActiveCorrelationId}
-  />
-  <IngestJob
-    harness="pi"
-    runs={data.piRuns}
-    activeCorrelationId={data.piActiveCorrelationId}
-  />
-  <IngestJob
-    harness="omp"
-    runs={data.ompRuns}
-    activeCorrelationId={data.ompActiveCorrelationId}
-  />
-  <JobRunHistory harness="claude" runs={data.claudeRuns} />
-  <JobRunHistory harness="codex" runs={data.codexRuns} />
-  <JobRunHistory harness="pi" runs={data.piRuns} />
-  <JobRunHistory harness="omp" runs={data.ompRuns} />
+  {#each harnesses as harness (harness)}
+    <IngestJob
+      {harness}
+      runs={data.ingestJobs[harness].runs}
+      activeCorrelationId={data.ingestJobs[harness].activeCorrelationId}
+    />
+  {/each}
+  {#each harnesses as harness (harness)}
+    <JobRunHistory {harness} runs={data.ingestJobs[harness].runs} />
+  {/each}
 </main>
 
 <style>

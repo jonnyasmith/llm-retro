@@ -1,6 +1,5 @@
-import type { IngestHarness } from '$lib/jobs/contracts';
+import type { Harness } from '$lib/jobs/contracts';
 
-export type Harness = IngestHarness;
 export type LogSources = Record<Harness, string[]>;
 
 export interface ApplicationSettings {

@@ -2,25 +2,24 @@ import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { interactions } from '../database/schema';
+import { claudeIngestAdapter } from './claude-adapter';
+import { createIngestHandler } from './ingest-pipeline';
+import { literalCwdProjectResolver } from './project-resolver';
 import {
-  createClaudeIngestHandler,
-  literalCwdProjectResolver,
-} from './claude-ingest';
-import {
-  cleanupClaudeIngestFixtures,
-  createClaudeIngestFixture as createFixture,
+  cleanupIngestFixtures,
+  createIngestFixture,
   writeJsonLines,
-} from './claude-ingest-fixture';
+} from './ingest-fixture';
 
-afterEach(cleanupClaudeIngestFixtures);
+afterEach(cleanupIngestFixtures);
 
-describe('Claude ingest sub-agent folding', () => {
+describe('Claude sub-agent folding', () => {
   it('folds completed separate and inline sub-agents into their spawning Interactions', async () => {
-    const fixture = await createFixture();
+    const fixture = await createIngestFixture('claude');
     const sessionId = '44444444-4444-4444-8444-444444444444';
-    const sessionPath = join(fixture.projectDirectory, `${sessionId}.jsonl`);
+    const sessionPath = fixture.sessionPath(sessionId);
     const subagentDirectory = join(
-      fixture.projectDirectory,
+      fixture.sessionDirectory,
       sessionId,
       'subagents',
     );
@@ -287,7 +286,7 @@ describe('Claude ingest sub-agent folding', () => {
         },
       ],
     );
-    const handler = createClaudeIngestHandler({
+    const handler = createIngestHandler(claudeIngestAdapter, {
       resolveProject: literalCwdProjectResolver,
     });
 
@@ -350,11 +349,11 @@ describe('Claude ingest sub-agent folding', () => {
   });
 
   it('attributes a later completion to the original spawning Interaction', async () => {
-    const fixture = await createFixture();
+    const fixture = await createIngestFixture('claude');
     const sessionId = '55555555-5555-4555-8555-555555555555';
-    const sessionPath = join(fixture.projectDirectory, `${sessionId}.jsonl`);
+    const sessionPath = fixture.sessionPath(sessionId);
     const subagentDirectory = join(
-      fixture.projectDirectory,
+      fixture.sessionDirectory,
       sessionId,
       'subagents',
     );
@@ -422,7 +421,7 @@ describe('Claude ingest sub-agent folding', () => {
       },
     ];
     await writeJsonLines(sessionPath, records);
-    const handler = createClaudeIngestHandler({
+    const handler = createIngestHandler(claudeIngestAdapter, {
       resolveProject: literalCwdProjectResolver,
     });
     const run = (correlationId: string) =>

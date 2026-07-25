@@ -1,9 +1,9 @@
 <script lang="ts">
   import {
-    ingestHarnesses,
-    ingestHarnessLabels,
-    mapIngestHarnesses,
-    type IngestHarness,
+    harnesses,
+    harnessLabels,
+    mapHarnesses,
+    type Harness,
   } from '$lib/jobs/contracts';
   import { saveSettings } from '$lib/settings/client';
   import type {
@@ -15,13 +15,11 @@
   let { settings }: { settings: ApplicationSettings } = $props();
   const initialSettings = untrack(() => settings);
   let values = $state(
-    mapIngestHarnesses((harness) =>
-      initialSettings.logSources[harness].join('\n'),
-    ),
+    mapHarnesses((harness) => initialSettings.logSources[harness].join('\n')),
   );
   let baselines = $state({ ...values });
   let pinned = $state(
-    mapIngestHarnesses(
+    mapHarnesses(
       (harness) => initialSettings.logSourceOverrides[harness] !== undefined,
     ),
   );
@@ -36,7 +34,7 @@
       .filter(Boolean);
   }
 
-  function applyServerState(updatedHarnesses: readonly IngestHarness[]) {
+  function applyServerState(updatedHarnesses: readonly Harness[]) {
     for (const harness of updatedHarnesses) {
       const value = settings.logSources[harness].join('\n');
       values[harness] = value;
@@ -48,7 +46,7 @@
   async function persist(
     overrides: NonNullable<SettingsChanges['logSourceOverrides']>,
     successMessage: string,
-    updatedHarnesses: readonly IngestHarness[],
+    updatedHarnesses: readonly Harness[],
   ) {
     saving = true;
     error = '';
@@ -68,7 +66,7 @@
   }
 
   async function save() {
-    const changedHarnesses = ingestHarnesses.filter(
+    const changedHarnesses = harnesses.filter(
       (harness) => values[harness] !== baselines[harness],
     );
     const overrides = Object.fromEntries(
@@ -77,10 +75,10 @@
     await persist(overrides, 'Log source settings saved.', changedHarnesses);
   }
 
-  async function reset(harness: IngestHarness) {
+  async function reset(harness: Harness) {
     await persist(
       { [harness]: null },
-      `${ingestHarnessLabels[harness]} now follows built-in defaults.`,
+      `${harnessLabels[harness]} now follows built-in defaults.`,
       [harness],
     );
   }
@@ -98,13 +96,11 @@
     exist yet; blank lines are ignored.
   </p>
   <div class="source-list">
-    {#each ingestHarnesses as harness (harness)}
+    {#each harnesses as harness (harness)}
       <div class="source">
         <div class="source-heading">
           <div>
-            <label for={`source-${harness}`}
-              >{ingestHarnessLabels[harness]}</label
-            >
+            <label for={`source-${harness}`}>{harnessLabels[harness]}</label>
             <span class:pinned={pinned[harness]}>
               {pinned[harness]
                 ? 'Pinned to your paths'

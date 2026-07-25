@@ -7,6 +7,17 @@ Ingesting four Harnesses whose logs disagree on topology, identity, and structur
 - **Adapter (per Harness) owns** — enumerating its source-file groups (its directory topology, and Codex's relocation into `archived_sessions`), deriving the `stableSessionId`, and parsing a text slice into a normalised Session (genuine-prompt detection, token extraction, sub-agent fold-up + main/sub split, the stable `interaction_key`).
 - **Pipeline owns** — stable snapshot read (re-stat before/after to catch a file mutating mid-read), byte-offset checkpoint + incremental slice + resume-on-growth, raw archive, store writes (session/interaction/project upsert on the idempotency key), and cross-run dedup. Resumption included: the pipeline asks the adapter only which prompt boundary at or before the Checkpoint a resumed slice must start from, then slices once, so no adapter computes a slice of its own.
 
+**Naming.** *Adapter* means the strategy object above and nothing else. The per-Harness module that knows one log format's record grammar — how to read a Session's metadata, find a prompt boundary, extract usage from a record — is a **log reader**, which the adapter delegates to. One adapter may share a log reader with another Harness whose wire format matches.
+
+## The adapter set is a registry, but not everything Harness-shaped fits in it
+
+The adapters are reached through one `Record<Harness, IngestAdapter>` registry, which is the pipeline's single entry point: job registration at startup and the HTTP ingest trigger both read it, and no caller names a Harness longhand. The exhaustive `Record` annotation is load-bearing — widening `Harness` without extending the registry is a compile error, which is what makes adding a Harness a registry entry plus an adapter rather than an edit spread across the tree.
+
+Two facts about a Harness deliberately live outside that registry, and a reader who expects one home for everything should know why:
+
+- **Its display label** is client-reachable — the Jobs, Sessions, and Models screens render it — so it sits with the other client-safe Harness contracts. The registry imports the filesystem and the store; pulling it into a browser bundle is not an option.
+- **Its default Log sources** stay with the settings resolution in the store. Moving them onto the adapter would make the store import the registry, and the pipeline already imports the store to read settings — a runtime import cycle. The default-source record is independently exhaustive against `Harness`, so nothing is lost but locality.
+
 ## Absence is the null object
 
 A Harness that lacks a capability adapts by returning emptiness the pipeline already swallows, reusing the domain rule "a bucket a Harness does not report is null, never zero". No sub-agents or sub-tokens not separately logged → `subTokens` all null; no `cache_write` (Codex) → that bucket null; no sub-agent files → an empty source-file-group list the generic loop iterates zero times. The pipeline therefore carries no `if (harness === …)` branch.

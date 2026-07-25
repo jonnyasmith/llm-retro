@@ -4,7 +4,7 @@ import {
   IngestionActiveError,
   InvalidSettingsError,
 } from '$lib/server/settings/errors';
-import { ingestHarnesses } from '$lib/jobs/contracts';
+import { harnesses } from '$lib/jobs/contracts';
 import type { SettingsChanges } from '$lib/settings/contracts';
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
@@ -15,7 +15,7 @@ const settingsKeys = new Set([
   'rawArchivePath',
   'logSourceOverrides',
 ]);
-const harnessKeys = new Set<string>(ingestHarnesses);
+const harnessKeys = new Set<string>(harnesses);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -41,7 +41,7 @@ function parseLogSourceOverrides(
   }
 
   const overrides: NonNullable<SettingsChanges['logSourceOverrides']> = {};
-  for (const harness of ingestHarnesses) {
+  for (const harness of harnesses) {
     if (!(harness in value)) continue;
     const paths = value[harness];
     if (paths !== null && !isStringArray(paths)) {
