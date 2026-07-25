@@ -2,7 +2,7 @@ import { and, count, desc, eq, sql } from 'drizzle-orm';
 import type { AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { ingestHarnesses } from '../../jobs/contracts';
+import { harnesses } from '../../jobs/contracts';
 import type { Database } from './connection';
 import type { JobIdentity } from '../jobs/types';
 import type {
@@ -17,7 +17,6 @@ import { providerOf } from '../model';
 
 export type {
   ApplicationSettings,
-  Harness,
   LogSources,
   SettingsChanges,
 } from '../../settings/contracts';
@@ -72,7 +71,7 @@ export function persistSettings(
   const stored = database.select().from(settings).get();
   const current = getSettings(database);
   const logSourceOverrides = { ...(stored?.logSourceOverrides ?? {}) };
-  for (const harness of ingestHarnesses) {
+  for (const harness of harnesses) {
     const paths = changes.logSourceOverrides?.[harness];
     if (paths === undefined) continue;
     if (paths === null) {

@@ -9,7 +9,7 @@ import {
 } from 'node:fs/promises';
 import { basename, dirname, join, parse, relative, resolve } from 'node:path';
 import { and, eq } from 'drizzle-orm';
-import type { Harness } from '../database/store';
+import type { Harness } from '../../jobs/contracts';
 import {
   checkpoints,
   interactions,

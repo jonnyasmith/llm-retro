@@ -6,21 +6,21 @@ export const jobRunStatuses = [
   'interrupted',
 ] as const;
 
-export const ingestHarnesses = ['claude', 'codex', 'pi', 'omp'] as const;
+export const harnesses = ['claude', 'codex', 'pi', 'omp'] as const;
 
-export type IngestHarness = (typeof ingestHarnesses)[number];
+export type Harness = (typeof harnesses)[number];
 
-export const ingestHarnessLabels: Record<IngestHarness, string> = {
+export const harnessLabels: Record<Harness, string> = {
   claude: 'Claude',
   codex: 'Codex',
   pi: 'pi',
   omp: 'omp',
 };
 
-export function mapIngestHarnesses<Value>(
-  mapper: (harness: IngestHarness) => Value,
-): Record<IngestHarness, Value> {
-  const [claude, codex, pi, omp] = ingestHarnesses;
+export function mapHarnesses<Value>(
+  mapper: (harness: Harness) => Value,
+): Record<Harness, Value> {
+  const [claude, codex, pi, omp] = harnesses;
   return {
     [claude]: mapper(claude),
     [codex]: mapper(codex),

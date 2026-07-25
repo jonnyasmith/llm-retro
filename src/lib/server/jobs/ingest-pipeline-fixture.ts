@@ -2,7 +2,8 @@ import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, extname, join } from 'node:path';
 import { openDatabase, type Database } from '../database/connection';
-import { persistSettings, type Harness } from '../database/store';
+import type { Harness } from '../../jobs/contracts';
+import { persistSettings } from '../database/store';
 import {
   createIngestHandler,
   type IdentifiedSession,

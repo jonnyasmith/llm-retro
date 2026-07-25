@@ -1,7 +1,7 @@
 <script lang="ts">
   import PageIntro from '$lib/components/PageIntro.svelte';
   import { formatDuration } from '$lib/format';
-  import { ingestHarnessLabels, type IngestHarness } from '$lib/jobs/contracts';
+  import { harnessLabels, type Harness } from '$lib/jobs/contracts';
   import type { PageProps } from './$types';
 
   let { data }: PageProps = $props();
@@ -11,7 +11,7 @@
   const byHarness = $derived(data.sessions.byHarness);
 
   function harnessLabel(harness: string): string {
-    return ingestHarnessLabels[harness as IngestHarness] ?? harness;
+    return harnessLabels[harness as Harness] ?? harness;
   }
 
   function excludedNote(count: number): string {
