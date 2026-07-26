@@ -37,7 +37,7 @@ A unit of background work the app runs, identified by a type plus an optional sc
 _Avoid_: Task, worker, process, cron.
 
 **Job run**:
-A single execution of a Job — the persisted record of one attempt, carrying its status through its lifecycle, its timing and outcome, and a correlation id that both tags its logs and names the stream a user watches its progress on. The history of Job runs is what the Jobs screen shows; a run left mid-flight by a crashed process is only recognised as interrupted by a later process at start-up, never by the run itself, and the user re-triggers it.
+A single execution of a Job — the persisted record of one attempt, carrying its status through its lifecycle, its timing and outcome, and a correlation id that both tags its logs and names the stream a user watches its progress on. A run of the Ingestion Job is spoken of as an "Ingestion run"; that is shorthand for this term, not a concept of its own. The history of Job runs is what the Jobs screen shows; a run left mid-flight by a crashed process is only recognised as interrupted by a later process at start-up, never by the run itself, and the user re-triggers it.
 _Avoid_: Task, invocation, execution, session.
 
 **Job run snapshot**:
@@ -55,3 +55,7 @@ _Avoid_: Backup database, query store.
 **Log source**:
 One of the per-Harness root paths that Ingestion enumerates for session logs. Each Harness follows built-in defaults unless the user pins it to one or more override paths.
 _Avoid_: Archive root, data directory.
+
+**Settings**:
+The user's application-wide preferences — the timezone history is bucketed into, whether the Raw archive is kept and where, and any pinned Log source overrides. There is one set of Settings for the tool, not one per Project or Harness. An Ingestion run reads them once and holds that snapshot for its duration (ADR-0011), so saving never alters work already in flight.
+_Avoid_: Config, preferences, options.
