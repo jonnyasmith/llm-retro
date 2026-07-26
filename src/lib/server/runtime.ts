@@ -4,6 +4,7 @@ import { JobDispatcher, reconcileInterruptedJobRuns } from './jobs/dispatcher';
 import { JobEventSource } from './jobs/events';
 import { createIngestHandler } from './jobs/ingest-pipeline';
 import { ingestAdapters, ingestJobIdentity } from './jobs/ingest-registry';
+import { JobRunStream } from './jobs/job-run-stream';
 import { stubJobHandler } from './jobs/stub-job';
 import { InProcessJobBackend } from './jobs/types';
 
@@ -21,5 +22,5 @@ export function initialiseRuntime(database: Database) {
   const dispatcher = new JobDispatcher(database, jobEvents, {
     backend: jobBackend,
   });
-  return { dispatcher, jobEvents };
+  return { dispatcher, jobRunStream: new JobRunStream(database, jobEvents) };
 }

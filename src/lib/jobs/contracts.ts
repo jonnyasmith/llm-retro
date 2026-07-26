@@ -49,6 +49,16 @@ export interface JobRunSummary {
   filesDone: number;
 }
 
+export interface JobSnapshotPayload {
+  correlation_id: string;
+  status: JobRunStatus;
+  files_done: number;
+  files_total: number;
+  current_file: string | null;
+  error: string | null;
+  timestamp: number;
+}
+
 export interface JobProgressPayload {
   correlation_id: string;
   files_done: number;
@@ -62,6 +72,8 @@ export interface JobLogPayload {
   message: string;
   timestamp: number;
 }
+
+export const jobRunLogRetention = 200;
 
 export interface JobDonePayload {
   correlation_id: string;

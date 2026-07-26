@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { openDatabase } from '../database/connection';
 import { checkpoints, interactions, jobRuns } from '../database/schema';
 import { JobDispatcher, reconcileInterruptedJobRuns } from './dispatcher';
-import { JobEventSource } from './events';
+import { JobEventSource, type JobDoneEvent } from './events';
 import { createStubJob, stubJobHandler } from './stub-job';
 import { InProcessJobBackend, type Job, type JobHandler } from './types';
 
@@ -29,6 +29,24 @@ async function createFixture() {
     dispatcher,
     events,
     listenerErrors,
+    waitForTerminal(correlationId: string): Promise<JobDoneEvent> {
+      const terminal = events
+        .history(correlationId)
+        .find((event): event is JobDoneEvent => event.kind === 'done');
+      if (terminal) return Promise.resolve(terminal);
+
+      const { promise, resolve } = Promise.withResolvers<JobDoneEvent>();
+      const unsubscribe = events.subscribe(
+        correlationId,
+        (event) => {
+          if (event.kind !== 'done') return;
+          unsubscribe();
+          resolve(event);
+        },
+        false,
+      );
+      return promise;
+    },
   };
 }
 
@@ -176,8 +194,8 @@ describe('Job dispatcher contract', () => {
       first.release();
       second.release();
       await Promise.all([
-        fixture.events.waitForTerminal(firstCorrelationId),
-        fixture.events.waitForTerminal(secondCorrelationId),
+        fixture.waitForTerminal(firstCorrelationId),
+        fixture.waitForTerminal(secondCorrelationId),
       ]);
     } finally {
       fixture.sqlite.close();
@@ -222,8 +240,8 @@ describe('Job dispatcher contract', () => {
       });
 
       await Promise.all([
-        fixture.events.waitForTerminal(successId),
-        fixture.events.waitForTerminal(failureId),
+        fixture.waitForTerminal(successId),
+        fixture.waitForTerminal(failureId),
       ]);
 
       expect(
@@ -404,7 +422,7 @@ describe('stub Job checkpoint contract', () => {
           filePath: logPath,
         }),
       );
-      await fixture.events.waitForTerminal(resumedId);
+      await fixture.waitForTerminal(resumedId);
       expect(resumedId).not.toBe(interruptedId);
       expect(
         fixture.events.history(resumedId).filter(({ kind }) => kind === 'log'),
@@ -420,7 +438,7 @@ describe('stub Job checkpoint contract', () => {
           filePath: logPath,
         }),
       );
-      await fixture.events.waitForTerminal(unchangedId);
+      await fixture.waitForTerminal(unchangedId);
       expect(
         fixture.events
           .history(unchangedId)
@@ -441,7 +459,7 @@ describe('stub Job checkpoint contract', () => {
           filePath: logPath,
         }),
       );
-      await fixture.events.waitForTerminal(largerReplacementId);
+      await fixture.waitForTerminal(largerReplacementId);
 
       expect(
         fixture.events
@@ -463,7 +481,7 @@ describe('stub Job checkpoint contract', () => {
           filePath: logPath,
         }),
       );
-      await fixture.events.waitForTerminal(shrunkId);
+      await fixture.waitForTerminal(shrunkId);
       expect(
         fixture.events.history(shrunkId).filter(({ kind }) => kind === 'log'),
       ).toHaveLength(1);

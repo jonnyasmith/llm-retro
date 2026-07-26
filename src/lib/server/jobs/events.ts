@@ -1,3 +1,4 @@
+import { jobRunLogRetention } from '../../jobs/contracts';
 import type { JobProgress } from './types';
 
 interface JobEventBase {
@@ -38,7 +39,7 @@ export class JobEventSource {
   readonly #onListenerError: (cause: unknown, event: JobEvent) => void;
 
   constructor(options: JobEventSourceOptions = {}) {
-    this.#maxEventsPerRun = options.maxEventsPerRun ?? 200;
+    this.#maxEventsPerRun = options.maxEventsPerRun ?? jobRunLogRetention;
     this.#maxCompletedRuns = options.maxCompletedRuns ?? 100;
     this.#onListenerError =
       options.onListenerError ??
@@ -97,25 +98,6 @@ export class JobEventSource {
       listeners.delete(listener);
       if (listeners.size === 0) this.#listeners.delete(correlationId);
     };
-  }
-
-  waitForTerminal(correlationId: string): Promise<JobDoneEvent> {
-    const terminal = this.history(correlationId).find(
-      (event): event is JobDoneEvent => event.kind === 'done',
-    );
-    if (terminal) return Promise.resolve(terminal);
-
-    return new Promise((resolve) => {
-      const unsubscribe = this.subscribe(
-        correlationId,
-        (event) => {
-          if (event.kind !== 'done') return;
-          unsubscribe();
-          resolve(event);
-        },
-        false,
-      );
-    });
   }
 
   #deliver(listener: JobEventListener, event: JobEvent): void {

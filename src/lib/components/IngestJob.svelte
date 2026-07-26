@@ -5,6 +5,7 @@
   import {
     harnessLabels,
     isTerminalJobRunStatus,
+    jobRunLogRetention,
     parseJobEventData,
     type JobDonePayload,
     type JobLogPayload,
@@ -89,7 +90,7 @@
     });
     stream.addEventListener('log', (event) => {
       const { message } = parseJobEventData<JobLogPayload>(event);
-      logs = [...logs.slice(-99), message];
+      logs = [...logs, message].slice(-jobRunLogRetention);
     });
     stream.addEventListener('done', (event) => {
       outcome = parseJobEventData<JobDonePayload>(event);
