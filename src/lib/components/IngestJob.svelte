@@ -4,15 +4,11 @@
   import { page } from '$app/state';
   import {
     harnessLabels,
-    isTerminalJobRunStatus,
-    jobRunLogRetention,
-    parseJobEventData,
-    type JobDonePayload,
-    type JobLogPayload,
-    type JobProgressPayload,
     type JobRunSummary,
     type Harness,
   } from '$lib/jobs/contracts';
+  import { openJobRunEventSource } from '$lib/jobs/job-run-event-source';
+  import { JobRunWatch } from '$lib/jobs/job-run-watch.svelte';
   import { onDestroy } from 'svelte';
 
   let {
@@ -25,83 +21,29 @@
     activeCorrelationId: string | null;
   } = $props();
   const harnessLabel = $derived(harnessLabels[harness]);
-  let correlationId = $state<string | null>(null);
-  let progress = $state<JobProgressPayload>({
-    correlation_id: '',
-    files_done: 0,
-    files_total: 0,
-    current_file: null,
-    timestamp: 0,
-  });
-  let logs = $state<string[]>([]);
-  let outcome = $state<JobDonePayload | null>(null);
-  let lastFile = $state<string | null>(null);
-  let connectionState = $state<'idle' | 'connecting' | 'live' | 'reconnecting'>(
-    'idle',
-  );
+  let watch = $state<JobRunWatch | null>(null);
   let triggerError = $state<string | null>(null);
   let isTriggering = $state(false);
-  let stream: EventSource | null = null;
 
   const percentage = $derived(
-    progress.files_total === 0
+    watch === null || watch.filesTotal === 0
       ? 0
-      : Math.round((progress.files_done / progress.files_total) * 100),
+      : Math.round((watch.filesDone / watch.filesTotal) * 100),
   );
-  const isRunning = $derived(correlationId !== null && outcome === null);
+  const isRunning = $derived(watch !== null && !watch.finished);
+  const streamLabel = $derived(
+    watch === null
+      ? 'idle'
+      : watch.connection === 'dropped'
+        ? 'dropped — retrying'
+        : watch.connection === 'closed' && !watch.finished
+          ? 'closed — reload to reconnect'
+          : watch.connection,
+  );
 
-  function watch(id: string) {
-    stream?.close();
-    const persisted = runs.find((run) => run.correlationId === id);
-    correlationId = id;
-    progress = {
-      correlation_id: id,
-      files_done: persisted?.filesDone ?? 0,
-      files_total: persisted?.filesTotal ?? 0,
-      current_file: null,
-      timestamp: persisted?.startedAt ?? Date.now(),
-    };
-    logs = [];
-    lastFile = null;
-    outcome =
-      persisted && isTerminalJobRunStatus(persisted.status)
-        ? {
-            correlation_id: persisted.correlationId,
-            status: persisted.status,
-            error: persisted.error,
-            timestamp: persisted.finishedAt ?? Date.now(),
-          }
-        : null;
-    connectionState = 'connecting';
-    stream = new EventSource(`/api/jobs/${encodeURIComponent(id)}/events`);
-    stream.addEventListener('open', () => {
-      connectionState = 'live';
-      logs = [];
-    });
-    stream.addEventListener('progress', (event) => {
-      const nextProgress = parseJobEventData<JobProgressPayload>(event);
-      if (nextProgress.current_file) lastFile = nextProgress.current_file;
-      if (
-        nextProgress.files_total !== progress.files_total ||
-        nextProgress.files_done >= progress.files_done
-      ) {
-        progress = nextProgress;
-      }
-    });
-    stream.addEventListener('log', (event) => {
-      const { message } = parseJobEventData<JobLogPayload>(event);
-      logs = [...logs, message].slice(-jobRunLogRetention);
-    });
-    stream.addEventListener('done', (event) => {
-      outcome = parseJobEventData<JobDonePayload>(event);
-      connectionState = 'idle';
-      stream?.close();
-      stream = null;
-      void invalidateAll();
-    });
-    stream.addEventListener('error', () => {
-      if (!outcome) connectionState = 'reconnecting';
-    });
+  function startWatching(correlationId: string) {
+    watch?.close();
+    watch = new JobRunWatch(correlationId, openJobRunEventSource);
   }
 
   async function trigger() {
@@ -121,7 +63,7 @@
         ),
         {},
       );
-      watch(correlation_id);
+      startWatching(correlation_id);
     } catch (cause) {
       triggerError = cause instanceof Error ? cause.message : String(cause);
     } finally {
@@ -139,10 +81,14 @@
         ? requestedRun
         : null;
     const run = requested ?? activeCorrelationId;
-    if (run && run !== correlationId) watch(run);
+    if (run && run !== watch?.correlationId) startWatching(run);
   });
 
-  onDestroy(() => stream?.close());
+  $effect(() => {
+    if (watch?.finished) void invalidateAll();
+  });
+
+  onDestroy(() => watch?.close());
 </script>
 
 <section aria-labelledby={`${harness}-ingest-heading`}>
@@ -164,45 +110,44 @@
     <p class="error" role="alert">{triggerError}</p>
   {/if}
 
-  {#if correlationId}
+  {#if watch}
     <dl class="run-details">
       <div>
         <dt>Run handle</dt>
-        <dd>{correlationId}</dd>
+        <dd>{watch.correlationId}</dd>
       </div>
       <div>
         <dt>Stream</dt>
-        <dd>{connectionState}</dd>
+        <dd>{streamLabel}</dd>
       </div>
     </dl>
 
     <div class="progress-copy">
       <strong>{percentage}%</strong>
-      <span>{progress.files_done} of {progress.files_total} files</span>
+      <span>{watch.filesDone} of {watch.filesTotal} files</span>
     </div>
     <progress
       aria-label={`${harnessLabel} ingest file progress`}
-      value={progress.files_done}
-      max={progress.files_total || 1}>{percentage}%</progress
+      value={watch.filesDone}
+      max={watch.filesTotal || 1}>{percentage}%</progress
     >
     <p class="current-file">
-      <span>{outcome ? 'Last file' : 'Current file'}</span>
-      {progress.current_file ??
-        lastFile ??
-        (outcome
+      <span>{watch.finished ? 'Last file' : 'Current file'}</span>
+      {watch.currentFile ??
+        (watch.finished
           ? 'No file processed'
           : `Discovering ${harnessLabel} sessions…`)}
     </p>
 
     <div class="terminal" aria-live="polite">
-      {#if outcome}
+      {#if watch.finished}
         <strong
-          class:success={outcome.status === 'succeeded'}
-          class:interrupted={outcome.status === 'interrupted'}
+          class:success={watch.status === 'succeeded'}
+          class:interrupted={watch.status === 'interrupted'}
         >
-          {outcome.status}
+          {watch.status}
         </strong>
-        {#if outcome.error}<span>{outcome.error}</span>{/if}
+        {#if watch.error}<span>{watch.error}</span>{/if}
       {:else}
         <span>{harnessLabel} ingestion in progress</span>
       {/if}
@@ -210,10 +155,10 @@
 
     <div class="log-heading">
       <h3>Live log</h3>
-      <span>{logs.length} messages</span>
+      <span>{watch.log.length} messages</span>
     </div>
     <ol class="log" aria-live="polite">
-      {#each logs as message, index (`${index}:${message}`)}
+      {#each watch.log as message, index (`${index}:${message}`)}
         <li>{message}</li>
       {:else}
         <li class="empty">Waiting for messages…</li>
