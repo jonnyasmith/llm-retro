@@ -49,13 +49,21 @@ The record of how far Ingestion has consumed each log file, so a re-run or a res
 _Avoid_: Offset, cursor, watermark, bookmark.
 
 **Raw archive**:
-An opt-in copy of untouched source files beneath an app-owned root, organised by Harness. It protects history when a Harness prunes, rotates, or relocates its own logs; it is not the normalised query store.
-_Avoid_: Backup database, query store.
+An opt-in copy of untouched source files beneath an app-owned root, organised by Harness. It protects history when a Harness prunes, rotates, or relocates its own logs; it is not the Store.
+_Avoid_: Backup database, Store.
 
 **Log source**:
 One of the per-Harness root paths that Ingestion enumerates for session logs. Each Harness follows built-in defaults unless the user pins it to one or more override paths.
-_Avoid_: Archive root, data directory.
+_Avoid_: Archive root, session directory.
 
 **Settings**:
 The user's application-wide preferences — the timezone history is bucketed into, whether the Raw archive is kept and where, and any pinned Log source overrides. There is one set of Settings for the tool, not one per Project or Harness. An Ingestion run reads them once and holds that snapshot for its duration (ADR-0011), so saving never alters work already in flight.
 _Avoid_: Config, preferences, options.
+
+**Store**:
+The normalised, queryable record of everything Ingestion has consumed — the Interactions, and the Sessions, Projects, Models and Job runs they roll up to. It holds no prompt or response text and is derived and rebuildable, the Harnesses' own logs remaining the system of record (ADR-0003). Every metric the tool reports is answered from the Store; it is not the Raw archive.
+_Avoid_: Index, warehouse, cache, backup.
+
+**Connection**:
+The single, process-wide, open route through which the Store is read and written. There is one for the life of the process, shared by every screen and every Job run concurrently (ADR-0006) — not one per request, per Job, or per query. Distinct from the connection a browser holds open to watch a Job run's progress (ADR-0004).
+_Avoid_: Handle, client, pool, session.
