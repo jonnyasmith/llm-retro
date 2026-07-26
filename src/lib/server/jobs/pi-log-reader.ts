@@ -1,6 +1,11 @@
+import { harnessLabels } from '../../jobs/contracts';
 import { findLastPromptBoundary } from './jsonl-scan';
-import type { TokenBuckets } from './ingest-pipeline';
-import { canonicaliseModel } from '../model';
+import {
+  accumulateTokens,
+  nullTokenBuckets,
+  type TokenBuckets,
+} from './token-buckets';
+import { resolveServingModel, type ModelCandidate } from '../model';
 
 interface PiRecord {
   type?: unknown;
@@ -48,19 +53,16 @@ export interface NormalisedPiSession {
   interactions: NormalisedPiInteraction[];
 }
 
+// The only Harness-shaped part of token extraction: which wire field is which
+// bucket. The output key is named because the serving-Model rule needs it too.
+const outputWireKey = 'output';
+
 const tokenSources = [
   ['input', 'input'],
-  ['output', 'output'],
+  ['output', outputWireKey],
   ['cacheRead', 'cacheRead'],
   ['cacheWrite', 'cacheWrite'],
 ] as const satisfies ReadonlyArray<readonly [keyof TokenBuckets, string]>;
-
-const nullTokens: TokenBuckets = {
-  input: null,
-  output: null,
-  cacheRead: null,
-  cacheWrite: null,
-};
 
 export function readPiSessionMetadata(
   filePath: string,
@@ -215,53 +217,46 @@ function normaliseInteraction(
   pending: PendingInteraction,
   filePath: string,
 ): NormalisedPiInteraction {
-  const modelRaw = selectModel(pending.assistants, filePath);
+  const serving = resolveServingModel(modelCandidates(pending.assistants));
+  if (serving === null) {
+    throw new Error(
+      `Responded ${harnessLabels.pi} Interaction has no model: ${filePath}`,
+    );
+  }
   return {
     interactionKey: pending.interactionKey,
     cwd: pending.cwd,
-    model: canonicaliseModel(modelRaw),
-    modelRaw,
+    model: serving.model,
+    modelRaw: serving.modelRaw,
     mainTokens: sumTokens(pending.assistants),
-    subTokens: { ...nullTokens },
+    subTokens: nullTokenBuckets(),
     spawnedSubagents: pending.records.some(spawnedSubagent),
     timestamp: pending.timestamp,
   };
 }
 
 function sumTokens(records: PiRecord[]): TokenBuckets {
-  const buckets: TokenBuckets = { ...nullTokens };
+  const buckets = nullTokenBuckets();
   for (const record of records) {
-    for (const [bucket, sourceKey] of tokenSources) {
-      const value = record.message?.usage?.[sourceKey];
-      if (typeof value === 'number') {
-        buckets[bucket] = (buckets[bucket] ?? 0) + value;
-      }
+    for (const [bucket, wireKey] of tokenSources) {
+      accumulateTokens(buckets, bucket, record.message?.usage?.[wireKey]);
     }
   }
   return buckets;
 }
 
-function selectModel(assistants: PiRecord[], filePath: string): string {
-  const outputByModel = new Map<string, number>();
+function modelCandidates(assistants: PiRecord[]): ModelCandidate[] {
+  const candidates: ModelCandidate[] = [];
   for (const assistant of assistants) {
-    const model = assistant.message?.model;
-    if (typeof model !== 'string' || model.length === 0) continue;
-    const outputTokens = assistant.message?.usage?.output;
-    outputByModel.set(
-      model,
-      (outputByModel.get(model) ?? 0) +
-        (typeof outputTokens === 'number' ? outputTokens : 0),
-    );
+    const modelRaw = assistant.message?.model;
+    if (typeof modelRaw !== 'string' || modelRaw.length === 0) continue;
+    const outputTokens = assistant.message?.usage?.[outputWireKey];
+    candidates.push({
+      modelRaw,
+      outputTokens: typeof outputTokens === 'number' ? outputTokens : 0,
+    });
   }
-  const firstModel = outputByModel.keys().next().value;
-  if (!firstModel) {
-    throw new Error(`Responded pi Interaction has no model: ${filePath}`);
-  }
-  let selected = firstModel;
-  for (const [model, outputTokens] of outputByModel) {
-    if (outputTokens > (outputByModel.get(selected) ?? 0)) selected = model;
-  }
-  return selected;
+  return candidates;
 }
 
 function spawnedSubagent(record: PiRecord): boolean {

@@ -1,5 +1,10 @@
 import { scanRecordLines } from './jsonl-scan';
-import type { NormalisedInteraction, TokenBuckets } from './ingest-pipeline';
+import type { NormalisedInteraction } from './ingest-pipeline';
+import {
+  accumulateTokens,
+  nullTokenBuckets,
+  type TokenBuckets,
+} from './token-buckets';
 import { canonicaliseModel } from '../model';
 
 interface CodexRecord {
@@ -31,13 +36,6 @@ export interface NormalisedCodexSession {
   endedAt: number | null;
   interactions: NormalisedInteraction[];
 }
-
-const nullTokens: TokenBuckets = {
-  input: null,
-  output: null,
-  cacheRead: null,
-  cacheWrite: null,
-};
 
 export function readCodexSessionMetadata(
   filePath: string,
@@ -104,7 +102,7 @@ export function readCodexSession(
         model: canonicaliseModel(pending.modelRaw),
         modelRaw: pending.modelRaw,
         mainTokens: pending.tokens,
-        subTokens: { ...nullTokens },
+        subTokens: nullTokenBuckets(),
         spawnedSubagents: false,
         timestamp: pending.timestamp,
       });
@@ -237,7 +235,7 @@ function openInteraction(
     timestamp,
     hasAssistantResponse: false,
     hasTokenUsage: false,
-    tokens: { ...nullTokens },
+    tokens: nullTokenBuckets(),
   };
 }
 
@@ -312,9 +310,11 @@ function addLastTokenUsage(
       `Codex cached_input_tokens exceeds input_tokens: ${filePath}`,
     );
   }
-  pending.tokens.input = (pending.tokens.input ?? 0) + input - cachedInput;
-  pending.tokens.cacheRead = (pending.tokens.cacheRead ?? 0) + cachedInput;
-  pending.tokens.output = (pending.tokens.output ?? 0) + output;
+  // Codex's buckets are disjoint (ADR-0010): cached input is its own bucket
+  // and is subtracted out of input rather than counted twice.
+  accumulateTokens(pending.tokens, 'input', input - cachedInput);
+  accumulateTokens(pending.tokens, 'cacheRead', cachedInput);
+  accumulateTokens(pending.tokens, 'output', output);
   pending.hasTokenUsage = true;
 }
 

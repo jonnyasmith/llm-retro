@@ -170,40 +170,6 @@ export function hasActiveIngestRun(database: Database): boolean {
   );
 }
 
-export function getOverviewTotals(database: Database) {
-  const totals = database
-    .select({
-      interactionCount: count(),
-      totalTokens: sql<number>`coalesce(sum(
-        coalesce(${interactions.mainInputTokens}, 0) +
-        coalesce(${interactions.mainOutputTokens}, 0) +
-        coalesce(${interactions.mainCacheReadTokens}, 0) +
-        coalesce(${interactions.mainCacheWriteTokens}, 0) +
-        coalesce(${interactions.subInputTokens}, 0) +
-        coalesce(${interactions.subOutputTokens}, 0) +
-        coalesce(${interactions.subCacheReadTokens}, 0) +
-        coalesce(${interactions.subCacheWriteTokens}, 0)
-      ), 0)`,
-    })
-    .from(interactions)
-    .get();
-
-  return totals ?? { interactionCount: 0, totalTokens: 0 };
-}
-
-export function getActivityHeatmap(database: Database) {
-  return database
-    .select({
-      localDow: interactions.localDow,
-      localHour: interactions.localHour,
-      interactionCount: count(),
-    })
-    .from(interactions)
-    .groupBy(interactions.localDow, interactions.localHour)
-    .orderBy(interactions.localDow, interactions.localHour)
-    .all();
-}
-
 type TokenColumn = AnySQLiteColumn;
 
 const allTokenColumns: TokenColumn[] = [
@@ -231,6 +197,42 @@ function nullAwareSum(columns: TokenColumn[]) {
   return sql<
     number | null
   >`sum(case when ${allNull} then null else ${reportedSum} end)`;
+}
+
+export function getOverviewTotals(database: Database) {
+  // An aggregate select with no grouping always returns exactly one row.
+  const [totals] = database
+    .select({
+      interactionCount: count(),
+      totalTokens: nullAwareSum(allTokenColumns),
+    })
+    .from(interactions)
+    .all();
+
+  // Every rollup consumer renders an absent bucket as an em dash; the overview
+  // renders its total through a plain number formatter with no absent branch,
+  // so an empty store must read as a genuine zero. A deliberate divergence from
+  // the null-not-zero rule, named so it stays a visible decision rather than a
+  // second, silently different SQL expression.
+  const absentTotalAsZero = totals.totalTokens ?? 0;
+
+  return {
+    interactionCount: totals.interactionCount,
+    totalTokens: absentTotalAsZero,
+  };
+}
+
+export function getActivityHeatmap(database: Database) {
+  return database
+    .select({
+      localDow: interactions.localDow,
+      localHour: interactions.localHour,
+      interactionCount: count(),
+    })
+    .from(interactions)
+    .groupBy(interactions.localDow, interactions.localHour)
+    .orderBy(interactions.localDow, interactions.localHour)
+    .all();
 }
 
 // Combined display buckets pair each main column with its sub column; the total

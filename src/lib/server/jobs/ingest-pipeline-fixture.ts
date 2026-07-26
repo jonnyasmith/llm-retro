@@ -15,8 +15,8 @@ import {
   type ParseSessionSliceInput,
   type ResumeBoundary,
   type SubTokenUpdateInput,
-  type TokenBuckets,
 } from './ingest-pipeline';
+import { nullTokenBuckets, type TokenBuckets } from './token-buckets';
 import { findLastPromptBoundary } from './jsonl-scan';
 import {
   literalCwdProjectResolver,
@@ -146,15 +146,8 @@ export async function writeLines(
   );
 }
 
-const NULL_BUCKETS: TokenBuckets = {
-  input: null,
-  output: null,
-  cacheRead: null,
-  cacheWrite: null,
-};
-
 function toBuckets(partial?: Partial<TokenBuckets>): TokenBuckets {
-  return { ...NULL_BUCKETS, ...partial };
+  return { ...nullTokenBuckets(), ...partial };
 }
 
 async function defaultEnumerate(

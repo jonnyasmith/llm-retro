@@ -1,11 +1,16 @@
 import { basename, dirname, relative } from 'node:path';
+import { harnessLabels } from '../../jobs/contracts';
 import type {
   IngestSourceContents,
   NormalisedInteraction,
-  TokenBuckets,
 } from './ingest-pipeline';
 import { findLastPromptBoundary } from './jsonl-scan';
-import { canonicaliseModel } from '../model';
+import {
+  accumulateTokens,
+  nullTokenBuckets,
+  type TokenBuckets,
+} from './token-buckets';
+import { resolveServingModel, type ModelCandidate } from '../model';
 
 interface OmpRecord {
   type?: unknown;
@@ -53,19 +58,16 @@ export interface OmpSubTokenUpdate {
   subTokens: TokenBuckets;
 }
 
+// The only Harness-shaped part of token extraction: which wire field is which
+// bucket. The output key is named because the serving-Model rule needs it too.
+const outputWireKey = 'output';
+
 const tokenSources = [
   ['input', 'input'],
-  ['output', 'output'],
+  ['output', outputWireKey],
   ['cacheRead', 'cacheRead'],
   ['cacheWrite', 'cacheWrite'],
 ] as const satisfies ReadonlyArray<readonly [keyof TokenBuckets, string]>;
-
-const nullTokens: TokenBuckets = {
-  input: null,
-  output: null,
-  cacheRead: null,
-  cacheWrite: null,
-};
 
 export function readOmpSessionMetadata(
   filePath: string,
@@ -267,12 +269,17 @@ function normaliseInteraction(
   agentLogs: AgentLog[],
   filePath: string,
 ): NormalisedInteraction {
-  const modelRaw = selectModel(pending.assistants, filePath);
+  const serving = resolveServingModel(modelCandidates(pending.assistants));
+  if (serving === null) {
+    throw new Error(
+      `Responded ${harnessLabels.omp} Interaction has no model: ${filePath}`,
+    );
+  }
   return {
     interactionKey: pending.interactionKey,
     cwd: pending.cwd,
-    model: canonicaliseModel(modelRaw),
-    modelRaw,
+    model: serving.model,
+    modelRaw: serving.modelRaw,
     mainTokens: sumTokens(pending.assistants),
     subTokens: sumTokens(
       collectSubagentAssistants(
@@ -379,39 +386,27 @@ function collectSubagentAssistants(
 }
 
 function sumTokens(records: OmpRecord[]): TokenBuckets {
-  const buckets: TokenBuckets = { ...nullTokens };
+  const buckets = nullTokenBuckets();
   for (const record of records) {
-    for (const [bucket, sourceKey] of tokenSources) {
-      const value = record.message?.usage?.[sourceKey];
-      if (typeof value === 'number') {
-        buckets[bucket] = (buckets[bucket] ?? 0) + value;
-      }
+    for (const [bucket, wireKey] of tokenSources) {
+      accumulateTokens(buckets, bucket, record.message?.usage?.[wireKey]);
     }
   }
   return buckets;
 }
 
-function selectModel(assistants: OmpRecord[], filePath: string): string {
-  const outputByModel = new Map<string, number>();
+function modelCandidates(assistants: OmpRecord[]): ModelCandidate[] {
+  const candidates: ModelCandidate[] = [];
   for (const assistant of assistants) {
-    const model = assistant.message?.model;
-    if (typeof model !== 'string' || model.length === 0) continue;
-    const outputTokens = assistant.message?.usage?.output;
-    outputByModel.set(
-      model,
-      (outputByModel.get(model) ?? 0) +
-        (typeof outputTokens === 'number' ? outputTokens : 0),
-    );
+    const modelRaw = assistant.message?.model;
+    if (typeof modelRaw !== 'string' || modelRaw.length === 0) continue;
+    const outputTokens = assistant.message?.usage?.[outputWireKey];
+    candidates.push({
+      modelRaw,
+      outputTokens: typeof outputTokens === 'number' ? outputTokens : 0,
+    });
   }
-  const firstModel = outputByModel.keys().next().value;
-  if (!firstModel) {
-    throw new Error(`Responded omp Interaction has no model: ${filePath}`);
-  }
-  let selected = firstModel;
-  for (const [model, outputTokens] of outputByModel) {
-    if (outputTokens > (outputByModel.get(selected) ?? 0)) selected = model;
-  }
-  return selected;
+  return candidates;
 }
 
 function parseTimestamp(value: unknown): number | null {

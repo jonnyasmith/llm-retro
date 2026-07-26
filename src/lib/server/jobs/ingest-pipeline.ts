@@ -25,13 +25,7 @@ import {
 } from './project-resolver';
 import { isMissingPath } from './missing-path';
 import type { JobHandler } from './types';
-
-export interface TokenBuckets {
-  input: number | null;
-  output: number | null;
-  cacheRead: number | null;
-  cacheWrite: number | null;
-}
+import type { TokenBuckets } from './token-buckets';
 
 export interface NormalisedInteraction {
   interactionKey: string;

@@ -1,6 +1,11 @@
+import { harnessLabels } from '../../jobs/contracts';
 import { findLastPromptBoundary } from './jsonl-scan';
-import type { TokenBuckets } from './ingest-pipeline';
-import { canonicaliseModel } from '../model';
+import {
+  accumulateTokens,
+  nullTokenBuckets,
+  type TokenBuckets,
+} from './token-buckets';
+import { resolveServingModel, type ModelCandidate } from '../model';
 
 interface ClaudeRecord {
   type?: unknown;
@@ -55,9 +60,13 @@ export interface ClaudeSourceContents {
   contents: string;
 }
 
+// The only Harness-shaped part of token extraction: which wire field is which
+// bucket. The output key is named because the serving-Model rule needs it too.
+const outputWireKey = 'output_tokens';
+
 const tokenSources = [
   ['input', 'input_tokens'],
-  ['output', 'output_tokens'],
+  ['output', outputWireKey],
   ['cacheRead', 'cache_read_input_tokens'],
   ['cacheWrite', 'cache_creation_input_tokens'],
 ] as const satisfies ReadonlyArray<readonly [keyof TokenBuckets, string]>;
@@ -302,7 +311,12 @@ function normaliseInteraction(
   agentRecords: Map<string, ClaudeRecord[]>,
   filePath: string,
 ): NormalisedClaudeInteraction {
-  const modelRaw = selectModel(pending.assistants, filePath);
+  const serving = resolveServingModel(modelCandidates(pending.assistants));
+  if (serving === null) {
+    throw new Error(
+      `Responded ${harnessLabels.claude} Interaction has no model: ${filePath}`,
+    );
+  }
   const subagentAssistants = collectSubagentAssistants(
     rootAgentIds,
     agentRecords,
@@ -310,8 +324,8 @@ function normaliseInteraction(
   return {
     interactionKey: pending.interactionKey,
     cwd: pending.cwd,
-    model: canonicaliseModel(modelRaw),
-    modelRaw,
+    model: serving.model,
+    modelRaw: serving.modelRaw,
     mainTokens: sumTokens(pending.assistants),
     subTokens: sumTokens(subagentAssistants),
     timestamp: pending.timestamp,
@@ -429,47 +443,27 @@ function collectSubagentAssistants(
 }
 
 function sumTokens(records: ClaudeRecord[]): TokenBuckets {
-  const buckets: TokenBuckets = {
-    input: null,
-    output: null,
-    cacheRead: null,
-    cacheWrite: null,
-  };
-  for (const [bucket, sourceKey] of tokenSources) {
-    const values = records
-      .map((record) => record.message?.usage?.[sourceKey])
-      .filter((value): value is number => typeof value === 'number');
-    buckets[bucket] =
-      values.length === 0
-        ? null
-        : values.reduce((total, value) => total + value, 0);
+  const buckets = nullTokenBuckets();
+  for (const record of records) {
+    for (const [bucket, wireKey] of tokenSources) {
+      accumulateTokens(buckets, bucket, record.message?.usage?.[wireKey]);
+    }
   }
   return buckets;
 }
 
-function selectModel(assistants: ClaudeRecord[], filePath: string): string {
-  const outputByModel = new Map<string, number>();
+function modelCandidates(assistants: ClaudeRecord[]): ModelCandidate[] {
+  const candidates: ModelCandidate[] = [];
   for (const assistant of assistants) {
-    const model = assistant.message?.model;
-    if (typeof model !== 'string' || model.length === 0) continue;
-    const outputTokens = assistant.message?.usage?.output_tokens;
-    outputByModel.set(
-      model,
-      (outputByModel.get(model) ?? 0) +
-        (typeof outputTokens === 'number' ? outputTokens : 0),
-    );
+    const modelRaw = assistant.message?.model;
+    if (typeof modelRaw !== 'string' || modelRaw.length === 0) continue;
+    const outputTokens = assistant.message?.usage?.[outputWireKey];
+    candidates.push({
+      modelRaw,
+      outputTokens: typeof outputTokens === 'number' ? outputTokens : 0,
+    });
   }
-  const firstModel = outputByModel.keys().next().value;
-  if (!firstModel) {
-    throw new Error(`Responded Claude Interaction has no model: ${filePath}`);
-  }
-  if (outputByModel.size === 1) return firstModel;
-
-  let selected = firstModel;
-  for (const [model, outputTokens] of outputByModel) {
-    if (outputTokens > (outputByModel.get(selected) ?? 0)) selected = model;
-  }
-  return selected;
+  return candidates;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

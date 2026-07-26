@@ -182,4 +182,75 @@ describe('Claude log grammar', () => {
       fixture.sqlite.close();
     }
   });
+
+  it('attributes an Interaction to one Model spelled two ways over a briefer rival', async () => {
+    const fixture = await createIngestFixture('claude');
+    const sessionPath = fixture.sessionPath(
+      '22222222-2222-4222-8222-222222222222',
+    );
+    await writeJsonLines(sessionPath, [
+      {
+        type: 'user',
+        uuid: 'prompt-1',
+        cwd: '/work/alpha',
+        timestamp: '2025-01-01T20:00:00.000Z',
+        message: { content: 'Split the vote' },
+      },
+      {
+        type: 'assistant',
+        uuid: 'assistant-1',
+        timestamp: '2025-01-01T20:00:10.000Z',
+        message: {
+          model: 'claude-opus-4-8-20260101',
+          usage: { output_tokens: 10 },
+        },
+      },
+      {
+        type: 'assistant',
+        uuid: 'assistant-2',
+        timestamp: '2025-01-01T20:00:20.000Z',
+        message: {
+          model: 'claude-opus-4-8[1m]',
+          usage: { output_tokens: 8 },
+        },
+      },
+      {
+        type: 'assistant',
+        uuid: 'assistant-3',
+        timestamp: '2025-01-01T20:00:30.000Z',
+        message: {
+          model: 'claude-sonnet-4-6',
+          usage: { output_tokens: 12 },
+        },
+      },
+      {
+        type: 'last-prompt',
+        uuid: 'last-prompt-1',
+        timestamp: '2025-01-01T20:00:40.000Z',
+      },
+    ]);
+    const handler = createIngestHandler(claudeIngestAdapter, {
+      resolveProject: literalCwdProjectResolver,
+    });
+
+    try {
+      await handler.run(null, {
+        correlationId: 'correlation-1',
+        database: fixture.database,
+        progress: vi.fn(),
+        log: vi.fn(),
+      });
+
+      expect(fixture.database.select().from(interactions).all()).toEqual([
+        expect.objectContaining({
+          interactionKey: 'prompt-1',
+          model: 'claude-opus-4-8',
+          modelRaw: 'claude-opus-4-8-20260101',
+          mainOutputTokens: 30,
+        }),
+      ]);
+    } finally {
+      fixture.sqlite.close();
+    }
+  });
 });
