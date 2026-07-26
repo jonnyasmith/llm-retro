@@ -15,7 +15,7 @@ import {
   type SubagentDisclosure,
   type SubagentTopology,
 } from './interaction-accumulator';
-import { isRecord, parseTimestamp } from './jsonl-records';
+import { isRecord, parseJsonlRecords, parseTimestamp } from './jsonl-records';
 
 interface ClaudeRecord {
   type?: unknown;
@@ -148,29 +148,17 @@ export function findClaudePromptBoundary(
   return findPromptBoundary(contents, beforeByteOffset, claudeDialect);
 }
 
-/**
- * Not the shared parser: this one carries a line that decodes to a scalar
- * through as a record, and throws a `SyntaxError` naming no cause. Converging
- * it changes behaviour rather than structure.
- */
 function parseRecords(
   contents: string,
   filePath: string,
   firstLineNumber = 1,
 ): ClaudeRecord[] {
-  return contents
-    .split('\n')
-    .filter((line) => line.length > 0)
-    .map((line, index) => {
-      try {
-        return JSON.parse(line) as ClaudeRecord;
-      } catch (cause) {
-        throw new SyntaxError(
-          `Invalid Claude JSONL at ${filePath}:${firstLineNumber + index}`,
-          { cause },
-        );
-      }
-    });
+  return parseJsonlRecords<ClaudeRecord>(
+    'claude',
+    contents,
+    filePath,
+    firstLineNumber,
+  );
 }
 
 /**

@@ -253,4 +253,50 @@ describe('Claude log grammar', () => {
       fixture.sqlite.close();
     }
   });
+
+  it('fails ingestion on a session log line that is valid JSON but not a record', async () => {
+    const fixture = await createIngestFixture('claude');
+    const sessionPath = fixture.sessionPath(
+      '33333333-3333-4333-8333-333333333333',
+    );
+    await writeJsonLines(sessionPath, [
+      {
+        type: 'user',
+        uuid: 'prompt-1',
+        cwd: '/work/alpha',
+        timestamp: '2025-01-01T20:00:00.000Z',
+        message: { content: 'Carry a scalar' },
+      },
+      'a line that parses but is not a record',
+      {
+        type: 'assistant',
+        uuid: 'assistant-1',
+        timestamp: '2025-01-01T20:00:10.000Z',
+        message: {
+          model: 'claude-opus-4-8',
+          usage: { output_tokens: 4 },
+        },
+      },
+    ]);
+    const handler = createIngestHandler(claudeIngestAdapter, {
+      resolveProject: literalCwdProjectResolver,
+    });
+
+    try {
+      await expect(
+        handler.run(null, {
+          correlationId: 'correlation-1',
+          database: fixture.database,
+          progress: vi.fn(),
+          log: vi.fn(),
+        }),
+      ).rejects.toThrow(
+        `Invalid Claude JSONL at ${sessionPath}:2: record is not an object`,
+      );
+
+      expect(fixture.database.select().from(interactions).all()).toEqual([]);
+    } finally {
+      fixture.sqlite.close();
+    }
+  });
 });
