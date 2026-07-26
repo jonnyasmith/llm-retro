@@ -104,14 +104,12 @@ export async function runPipeline(
   options: {
     correlationId?: string;
     resolveProject?: CwdProjectResolver;
-    renameArchivedFile?: (oldPath: string, newPath: string) => Promise<void>;
     progress?: (progress: unknown) => void;
     log?: (message: string) => void;
   } = {},
 ): Promise<void> {
   const handler = createIngestHandler(adapter, {
     resolveProject: options.resolveProject ?? literalCwdProjectResolver,
-    renameArchivedFile: options.renameArchivedFile,
   });
   await handler.run(null, {
     correlationId: options.correlationId ?? 'pipeline-test',

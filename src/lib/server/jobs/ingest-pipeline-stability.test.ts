@@ -9,10 +9,11 @@ import {
   writeLines,
 } from './ingest-pipeline-fixture';
 
-// The pipeline re-stats a file around its read to reject a snapshot that
-// mutated mid-read (ADR-0008). That race cannot be provoked deterministically
-// with a real filesystem, so the read handle's second `stat` is forced to
-// disagree with the first — the faithful simulation of a concurrent writer.
+// The stable source-file read re-stats a file around the read, rejecting bytes
+// that no longer match the metadata describing them (ADR-0008). That race
+// cannot be provoked deterministically with a real filesystem, so the read
+// handle's second `stat` is forced to disagree with the first — the faithful
+// simulation of a concurrent writer.
 const unstablePaths = new Set<string>();
 
 vi.mock('node:fs/promises', async (importOriginal) => {
