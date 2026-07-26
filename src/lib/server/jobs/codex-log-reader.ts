@@ -1,3 +1,4 @@
+import { isRecord, parseJsonlRecords, parseTimestamp } from './jsonl-records';
 import { scanRecordLines } from './jsonl-scan';
 import type { NormalisedInteraction } from './ingest-pipeline';
 import {
@@ -195,22 +196,12 @@ function parseRecords(
   filePath: string,
   firstLineNumber = 1,
 ): CodexRecord[] {
-  const records: CodexRecord[] = [];
-  for (const [index, line] of contents.split('\n').entries()) {
-    if (line.length === 0) continue;
-    try {
-      const parsed: unknown = JSON.parse(line);
-      if (!isRecord(parsed)) throw new Error('record is not an object');
-      records.push(parsed);
-    } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      throw new Error(
-        `Invalid Codex JSONL at ${filePath}:${firstLineNumber + index}: ${message}`,
-        { cause },
-      );
-    }
-  }
-  return records;
+  return parseJsonlRecords<CodexRecord>(
+    'codex',
+    contents,
+    filePath,
+    firstLineNumber,
+  );
 }
 
 function isGenuinePrompt(record: CodexRecord): boolean {
@@ -329,14 +320,4 @@ function requiredTokenCount(
     );
   }
   return value;
-}
-
-function parseTimestamp(value: unknown): number | null {
-  if (typeof value !== 'string') return null;
-  const timestamp = Date.parse(value);
-  return Number.isNaN(timestamp) ? null : timestamp;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }
