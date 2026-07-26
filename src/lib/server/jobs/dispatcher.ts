@@ -1,5 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
+import type { JobDisposition } from '../../jobs/contracts';
 import type { Database } from '../database/connection';
 import { jobRuns } from '../database/schema';
 import { JobEventSource } from './events';
@@ -21,6 +22,11 @@ interface DispatcherOptions {
 interface NormalisedJobIdentity {
   type: string;
   scope: string;
+}
+
+export interface JobDispatch {
+  correlationId: string;
+  disposition: JobDisposition;
 }
 
 export function normaliseJobIdentity(
@@ -57,11 +63,13 @@ export class JobDispatcher {
     this.#createCorrelationId = options.createCorrelationId ?? randomUUID;
   }
 
-  dispatch(job: Job): string {
+  dispatch(job: Job): JobDispatch {
     const identity = normaliseJobIdentity(job.identity);
     const key = JSON.stringify([identity.type, identity.scope]);
     const localCorrelationId = this.#inFlight.get(key);
-    if (localCorrelationId) return localCorrelationId;
+    if (localCorrelationId) {
+      return { correlationId: localCorrelationId, disposition: 'joined' };
+    }
 
     const persisted = this.database
       .select({ correlationId: jobRuns.correlationId })
@@ -74,7 +82,9 @@ export class JobDispatcher {
         ),
       )
       .get();
-    if (persisted) return persisted.correlationId;
+    if (persisted) {
+      return { correlationId: persisted.correlationId, disposition: 'joined' };
+    }
 
     const correlationId = this.#createCorrelationId();
     const startedAt = this.#clock();
@@ -100,7 +110,7 @@ export class JobDispatcher {
     queueMicrotask(() => {
       void this.#execute(job, key, correlationId);
     });
-    return correlationId;
+    return { correlationId, disposition: 'started' };
   }
 
   async #execute(job: Job, key: string, correlationId: string): Promise<void> {

@@ -156,7 +156,7 @@ describe('Job dispatcher contract', () => {
     }
   });
 
-  it('returns immediately, reuses an in-flight identity, and overlaps distinct identities', async () => {
+  it('reports started or joined, reuses an in-flight identity, and overlaps distinct identities', async () => {
     const fixture = await createFixture();
     const first = controlledJob('controlled-first', undefined);
     const second = controlledJob('controlled-second', 'second');
@@ -167,18 +167,23 @@ describe('Job dispatcher contract', () => {
         { type: 'controlled-second', scope: 'second' },
         second.handler,
       );
-      const firstCorrelationId = fixture.dispatcher.dispatch(first.job);
-      const duplicateCorrelationId = fixture.dispatcher.dispatch({
+      const started = fixture.dispatcher.dispatch(first.job);
+      const duplicate = fixture.dispatcher.dispatch({
         ...first.job,
         identity: { type: 'controlled-first', scope: '' },
       });
-      const secondCorrelationId = fixture.dispatcher.dispatch(second.job);
+      const other = fixture.dispatcher.dispatch(second.job);
 
-      expect(firstCorrelationId).toMatch(
+      expect(started.correlationId).toMatch(
         /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
       );
-      expect(duplicateCorrelationId).toBe(firstCorrelationId);
-      expect(secondCorrelationId).not.toBe(firstCorrelationId);
+      expect(started.disposition).toBe('started');
+      expect(duplicate).toEqual({
+        correlationId: started.correlationId,
+        disposition: 'joined',
+      });
+      expect(other.disposition).toBe('started');
+      expect(other.correlationId).not.toBe(started.correlationId);
       expect(first.hasStarted()).toBe(false);
       expect(second.hasStarted()).toBe(false);
 
@@ -194,9 +199,51 @@ describe('Job dispatcher contract', () => {
       first.release();
       second.release();
       await Promise.all([
-        fixture.waitForTerminal(firstCorrelationId),
-        fixture.waitForTerminal(secondCorrelationId),
+        fixture.waitForTerminal(started.correlationId),
+        fixture.waitForTerminal(other.correlationId),
       ]);
+    } finally {
+      fixture.sqlite.close();
+    }
+  });
+
+  it('joins a run the database still calls running, and starts afresh once it is reconciled', async () => {
+    const fixture = await createFixture();
+    const orphaned = crypto.randomUUID();
+    const job = controlledJob('orphaned', 'previous-process');
+
+    try {
+      fixture.backend.register(
+        { type: 'orphaned', scope: 'previous-process' },
+        job.handler,
+      );
+      fixture.database
+        .insert(jobRuns)
+        .values({
+          type: 'orphaned',
+          scope: 'previous-process',
+          correlationId: orphaned,
+          status: 'running',
+          startedAt: 100,
+        })
+        .run();
+
+      expect(fixture.dispatcher.dispatch(job.job)).toEqual({
+        correlationId: orphaned,
+        disposition: 'joined',
+      });
+      await Promise.resolve();
+      expect(job.hasStarted()).toBe(false);
+
+      expect(reconcileInterruptedJobRuns(fixture.database, () => 200)).toBe(1);
+      const restarted = fixture.dispatcher.dispatch(job.job);
+
+      expect(restarted.disposition).toBe('started');
+      expect(restarted.correlationId).not.toBe(orphaned);
+
+      await job.started;
+      job.release();
+      await fixture.waitForTerminal(restarted.correlationId);
     } finally {
       fixture.sqlite.close();
     }
@@ -225,7 +272,7 @@ describe('Job dispatcher contract', () => {
           throw new Error('deliberate failure');
         },
       });
-      const successId = fixture.dispatcher.dispatch({
+      const { correlationId: successId } = fixture.dispatcher.dispatch({
         identity: { type: 'success', scope: 'one' },
         payload: null,
       });
@@ -234,7 +281,7 @@ describe('Job dispatcher contract', () => {
         throw new Error('observer disconnected');
       });
       fixture.events.subscribe(successId, delivered);
-      const failureId = fixture.dispatcher.dispatch({
+      const { correlationId: failureId } = fixture.dispatcher.dispatch({
         identity: { type: 'failure' },
         payload: null,
       });
@@ -415,7 +462,7 @@ describe('stub Job checkpoint contract', () => {
           .find(({ correlationId }) => correlationId === interruptedId),
       ).toMatchObject({ status: 'interrupted' });
 
-      const resumedId = fixture.dispatcher.dispatch(
+      const { correlationId: resumedId } = fixture.dispatcher.dispatch(
         createStubJob({
           harness: 'codex',
           stableSessionId: 'session-1',
@@ -431,7 +478,7 @@ describe('stub Job checkpoint contract', () => {
         lastCompleteRecordByteOffset: Buffer.byteLength('one\ntwo\n'),
       });
 
-      const unchangedId = fixture.dispatcher.dispatch(
+      const { correlationId: unchangedId } = fixture.dispatcher.dispatch(
         createStubJob({
           harness: 'codex',
           stableSessionId: 'session-1',
@@ -452,13 +499,14 @@ describe('stub Job checkpoint contract', () => {
         beforeLargerReplacement.atime,
         new Date(beforeLargerReplacement.mtimeMs + 2_000),
       );
-      const largerReplacementId = fixture.dispatcher.dispatch(
-        createStubJob({
-          harness: 'codex',
-          stableSessionId: 'session-1',
-          filePath: logPath,
-        }),
-      );
+      const { correlationId: largerReplacementId } =
+        fixture.dispatcher.dispatch(
+          createStubJob({
+            harness: 'codex',
+            stableSessionId: 'session-1',
+            filePath: logPath,
+          }),
+        );
       await fixture.waitForTerminal(largerReplacementId);
 
       expect(
@@ -474,7 +522,7 @@ describe('stub Job checkpoint contract', () => {
         beforeShrink.atime,
         new Date(beforeShrink.mtimeMs + 2_000),
       );
-      const shrunkId = fixture.dispatcher.dispatch(
+      const { correlationId: shrunkId } = fixture.dispatcher.dispatch(
         createStubJob({
           harness: 'codex',
           stableSessionId: 'session-1',

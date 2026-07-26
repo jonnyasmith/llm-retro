@@ -1,3 +1,4 @@
+import type { JobTriggerPayload } from '$lib/jobs/contracts';
 import { bootstrap } from '$lib/server/bootstrap';
 import { createStubJob } from '$lib/server/jobs/stub-job';
 import { error, json } from '@sveltejs/kit';
@@ -43,7 +44,7 @@ export const POST: RequestHandler = async ({ request }) => {
   }
 
   await ensureFixture();
-  const correlationId = bootstrap.dispatcher.dispatch(
+  const { correlationId, disposition } = bootstrap.dispatcher.dispatch(
     createStubJob({
       harness: 'stub',
       stableSessionId: `browser-demo:${randomUUID()}`,
@@ -51,6 +52,10 @@ export const POST: RequestHandler = async ({ request }) => {
       recordDelayMs: 120,
     }),
   );
+  const payload: JobTriggerPayload = {
+    correlation_id: correlationId,
+    disposition,
+  };
 
-  return json({ correlation_id: correlationId }, { status: 202 });
+  return json(payload, { status: 202 });
 };

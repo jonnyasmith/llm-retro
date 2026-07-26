@@ -49,6 +49,13 @@ export interface JobRunSummary {
   filesDone: number;
 }
 
+export type JobDisposition = 'started' | 'joined';
+
+export interface JobTriggerPayload {
+  correlation_id: string;
+  disposition: JobDisposition;
+}
+
 export interface JobSnapshotPayload {
   correlation_id: string;
   status: JobRunStatus;

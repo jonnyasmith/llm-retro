@@ -6,6 +6,7 @@
     harnessLabels,
     type JobRunSummary,
     type Harness,
+    type JobTriggerPayload,
   } from '$lib/jobs/contracts';
   import { openJobRunEventSource } from '$lib/jobs/job-run-event-source';
   import { JobRunWatch } from '$lib/jobs/job-run-watch.svelte';
@@ -24,6 +25,7 @@
   let watch = $state<JobRunWatch | null>(null);
   let triggerError = $state<string | null>(null);
   let isTriggering = $state(false);
+  let joinedCorrelationId = $state<string | null>(null);
 
   const percentage = $derived(
     watch === null || watch.filesTotal === 0
@@ -31,6 +33,10 @@
       : Math.round((watch.filesDone / watch.filesTotal) * 100),
   );
   const isRunning = $derived(watch !== null && !watch.finished);
+  const hasJoinedRun = $derived(
+    joinedCorrelationId !== null &&
+      joinedCorrelationId === watch?.correlationId,
+  );
   const streamLabel = $derived(
     watch === null
       ? 'idle'
@@ -54,15 +60,15 @@
         method: 'POST',
       });
       if (!response.ok) throw new Error(await response.text());
-      const { correlation_id } = (await response.json()) as {
-        correlation_id: string;
-      };
+      const { correlation_id, disposition } =
+        (await response.json()) as JobTriggerPayload;
       replaceState(
         resolve(
           `/?harness=${encodeURIComponent(harness)}&run=${encodeURIComponent(correlation_id)}`,
         ),
         {},
       );
+      joinedCorrelationId = disposition === 'joined' ? correlation_id : null;
       startWatching(correlation_id);
     } catch (cause) {
       triggerError = cause instanceof Error ? cause.message : String(cause);
@@ -108,6 +114,12 @@
 
   {#if triggerError}
     <p class="error" role="alert">{triggerError}</p>
+  {/if}
+
+  {#if hasJoinedRun}
+    <p class="notice" role="status">
+      A {harnessLabel} ingest was already in progress — showing you that run.
+    </p>
   {/if}
 
   {#if watch}
@@ -326,6 +338,10 @@
 
   .error {
     color: #9b3b32;
+  }
+
+  .notice {
+    color: #8a5b16;
   }
 
   @media (max-width: 36rem) {

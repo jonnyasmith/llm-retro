@@ -153,7 +153,7 @@ describe('Job run stream contract', () => {
           },
         },
       );
-      const correlationId = fixture.dispatcher.dispatch({
+      const { correlationId } = fixture.dispatcher.dispatch({
         identity: { type: 'settling' },
         payload: null,
       });
@@ -315,7 +315,7 @@ describe('Job run stream contract', () => {
           },
         },
       );
-      const correlationId = fixture.dispatcher.dispatch({
+      const { correlationId } = fixture.dispatcher.dispatch({
         identity: { type: 'live' },
         payload: null,
       });
