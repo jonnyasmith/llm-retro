@@ -1,0 +1,48 @@
+# Screens are verified by the setup SvelteKit generates, and reactive state lives in rune modules
+
+A rule the suite cannot reach is unverified, however good it looks. Every rule that lived inside a `.svelte` file was unreachable, because the Vitest include only ever collected `.test.ts` files: no test could render a component, so no test could fail when a screen rendered the wrong thing. Two defects shipped through that gap on one screen — a Job run's Started timestamp matched a millisecond-free suffix against a clock-derived instant and so rendered wrongly roughly 999 times in a thousand, and the duration rule had no minutes branch. Lifting both rules out to plain presentation functions closed the *rule* hole and left the *wiring* hole open: a correct formatter can still be handed the wrong argument, and a column can still be dropped or reordered, with the suite green throughout.
+
+We therefore adopt **the component-testing setup SvelteKit's own CLI generates** — browser-mode Vitest driven by Playwright, the Svelte browser-mode render library, and a two-project split — and pair it with a standing rule that **reactive state lives in dedicated rune modules rather than inside components**. The two halves are one decision: the rule exists precisely because it keeps testable logic off the surface that costs 550 MB of browser binaries to reach, and the setup exists because the rule alone was already the implicit convention here and it failed twice.
+
+The project split is what the add-on generates. The **server** project keeps the Node environment and today's include exactly as it was, with the client filename convention excluded; the **client** project is browser mode collecting only `*.svelte.test.ts`. The filename decides the project, so adding a test needs no configuration change. Both projects extend the root Vite configuration — naming the SvelteKit plugin again inside a project double-compiles and fails from inside the render library — and the assertion requirement the add-on switches on stays at the top level, so a server test with no assertion fails too.
+
+Two things the framework does not document, learned by execution:
+
+- **In browser mode the page-state and navigation imports resolve to silent no-ops.** The URL path reads as an empty string, the route identifier as null, the loaded data as an empty object, and the invalidation call resolves without doing anything. A test that forgets to mock them goes green while asserting against an empty page object, which is worse than no test. Every client test that touches either must mock it. The path-resolution import needs no mock and works unmocked everywhere.
+- **A `+`-prefixed filename is reserved inside the routes directory.** A test named `+page.svelte.test.ts` is rejected by the route manifest before Vitest ever sees it, so a screen's render test is named `page.svelte.test.ts` beside the component it renders.
+
+## The scope is seven surfaces, and every exclusion has a reason
+
+A client test renders a screen given the data its load function returns and asserts what a user would see. That is the only new seam: no test reaches a formatter through a component, and no test reaches a store query through a screen. The load functions are not part of it — every route loads server-side with direct database access, so a client test fabricates the returned data instead, typed from the load function's own return type so a changed store query breaks the fixture rather than leaving the test asserting a shape that no longer exists.
+
+Rendered: the Job run history component (both shipped defects, the View/Watch precedence, the absent machine-readable timestamp, the empty row), the Projects screen, the Models screen, the Sessions screen, the Overview screen, the Activity screen, and the layout. The Job run history component is the one surface tested below page level: it owns per-row rendering rules and is where both defects shipped, and testing the Jobs screen instead would drag four Job trigger components through the test for no assertion.
+
+Not rendered, deliberately:
+
+- **The Jobs screen** — four Job trigger components, each needing the full mock set, to assert a formatted Harness list and two loops.
+- **The Settings screen** — zero branches; it hands loaded data to three forms.
+- **The page intro component** — zero branches, three string props. A test would assert Svelte.
+- **The Job trigger component and the three Settings forms** — excluded by choice, not capability. With their state in rune modules, what remains is markup over a tested module, and each render test would need the navigation, page-state, fetch and event-source mocks to assert a button label. Their markup is a disclosed gap.
+
+Every table gets two ordered assertions — the header cells as a sequence and one representative data row as a sequence — because a single-element assertion catches a deleted column but passes when two columns swap places, which is the defect class this exists for. Fixtures are chosen to break the plausible wrong implementation rather than to look tidy: a non-zero millisecond component on every timestamp, a multi-minute duration, an absent Token usage bucket beside a genuine zero, a Harness breakdown with rows where the Model breakdown has none.
+
+## The Overview screen's empty state is deliberately different
+
+Every other screen swaps its body for an empty-state sentence. Overview shows the headline totals **and** appends the note, and a test pins that. Showing a real zero total beside "nothing recorded yet" is more honest than hiding the figures, and it is consistent with that screen's headline total being the one place a zero is genuinely wanted rather than an absence — the store's overview query already resolves an absent total to zero for exactly this reason. Do not unify it.
+
+## Considered options
+
+- **Server-side rendering with Svelte's own render function.** Free: zero dependencies, zero configuration, runs under the existing include and Node environment, and proven to render this repo's real screens from fabricated data. **Rejected despite being free**, because it is an invented convention — no Svelte or SvelteKit document proposes it for component testing, it can never assert an event, an effect or a fetch, and satisfying the page-state import means reproducing SvelteKit's internal server-render context by hand, an unpublished contract that can move in a patch release. It is recorded here rather than omitted because it is the option a future reader will rediscover and wonder why nobody took.
+- **DOM emulation with the bare mount API.** One dependency, no browser binaries, and published on Svelte's own testing page. Rejected as the primary choice: that same page warns it is low level and somewhat brittle, its assertion idiom is exact markup equality, and the CLI add-on it links to as the setup path has moved on from it. It stays the fallback if browser binaries ever become unacceptable.
+- **DOM emulation plus a testing library.** Three dependencies and the largest transitive footprint of the three, for an idiom browser mode provides natively.
+- **Blanket component coverage.** Rejected: scope by where the wiring defect can hurt, and record the reason for every exclusion. An exclusion with a stated reason is a decision; an exclusion without one is the blind spot growing back.
+
+Measured cost of the chosen option: three direct dependencies, ten additional transitive packages, roughly 550 MB of Playwright browser binaries stored outside the dependency tree and re-downloaded on a Playwright major bump, and a suite runtime of a few seconds including browser launch. There is no CI here, so it is paid once, locally.
+
+## Consequences
+
+- **The browser provider and Vitest are a locked pair.** The provider peer-depends on an *exact* Vitest version, not a caret range, so installing it against a pinned older Vitest produces unmet peers. Bump both together or neither.
+- **Browser binaries are an explicit install step**, not something the dependency install performs. `pnpm test:browsers` is that step, and the README names it, so a fresh clone gets an instruction rather than an obscure launch error.
+- **Reactive state belongs in a rune module, and those modules are tested with no tooling at all.** The Job run watch state machine already worked this way; the Settings save lifecycle and the Job trigger section now do too. Each is tested through a hand-rolled double of its injected interface, in the server project, at no browser cost.
+- **A test double must be able to fail wherever the implementations it stands in for can fail.** This is the same principle as the blind spot above, seen from the other side: an excluded file type and an over-narrow double produce the same outcome — a rule nothing can fail against — and the suite looks equally green in both cases. Coverage is not the measure; reachability is. The Ingestion fixture's fake adapter is the second instance: it identified a Session from its file path alone, narrower than every real Harness, so the archive-ordering test named for that behaviour passed vacuously until the case was made to provoke a failing identification. Ask the question of every new double.
+- **Browser mode brings Playwright into the dependency tree, and that is not a licence to add an end-to-end suite.** No test here asserts a click, a fetch or an event stream; the components that do those things are excluded from render coverage and their state is tested through their rune modules instead. Browser mode also writes a screenshot on failure — a debugging aid, not a baseline to assert against.

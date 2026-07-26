@@ -45,8 +45,8 @@
 
     {#if data.totals.interactionCount === 0}
       <p class="empty">
-        No Interactions have been recorded yet. Run Claude ingestion from Jobs
-        to populate this overview.
+        No Interactions have been recorded yet. Run ingestion from Jobs to
+        populate this overview.
       </p>
     {/if}
   </section>

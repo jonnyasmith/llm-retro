@@ -10,3 +10,5 @@ coverage
 *.sqlite-shm
 *.sqlite-wal
 worktree.yaml
+__screenshots__
+.vitest-attachments

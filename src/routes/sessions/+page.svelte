@@ -11,7 +11,7 @@
   function excludedNote(count: number): string {
     if (count === 0) return '';
     const sessions = count === 1 ? 'Session' : 'Sessions';
-    return `${formatCount(count)} ${sessions} excluded (no measurable duration)`;
+    return `${formatCount(count)} ${sessions} excluded (no measurable duration).`;
   }
 </script>
 
@@ -63,7 +63,7 @@
             How long you typically stay in a Session.
             {#if totals.durationExcluded > 0}
               <span class="footnote"
-                >{excludedNote(totals.durationExcluded)}.</span
+                >{excludedNote(totals.durationExcluded)}</span
               >
             {/if}
           </p>
