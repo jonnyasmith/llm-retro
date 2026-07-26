@@ -1,6 +1,7 @@
 <script lang="ts">
   import { saveSettings } from '$lib/settings/client';
   import type { ApplicationSettings } from '$lib/settings/contracts';
+  import { SettingsSave } from '$lib/settings/save.svelte';
   import { untrack } from 'svelte';
 
   let {
@@ -8,24 +9,16 @@
     timezones,
   }: { settings: ApplicationSettings; timezones: string[] } = $props();
   let timezone = $state(untrack(() => settings.timezone));
-  let saving = $state(false);
-  let error = $state('');
-  let confirmation = $state('');
+  const save = new SettingsSave(saveSettings, 'Unable to save time settings');
 
-  async function save() {
-    saving = true;
-    error = '';
-    confirmation = '';
-    try {
-      await saveSettings({ timezone });
-      timezone = settings.timezone;
-      confirmation = 'Time settings saved.';
-    } catch (cause) {
-      error =
-        cause instanceof Error ? cause.message : 'Unable to save time settings';
-    } finally {
-      saving = false;
-    }
+  function submit() {
+    return save.attempt({
+      changes: { timezone },
+      confirmation: 'Time settings saved.',
+      adopt: () => {
+        timezone = settings.timezone;
+      },
+    });
   }
 </script>
 
@@ -47,12 +40,12 @@
     {/each}
   </select>
   <div class="actions">
-    <button type="button" onclick={save} disabled={saving}>
-      {saving ? 'Saving…' : 'Save Time'}
+    <button type="button" onclick={submit} disabled={save.saving}>
+      {save.saving ? 'Saving…' : 'Save Time'}
     </button>
-    {#if error}<p class="message error">{error}</p>{/if}
-    {#if confirmation}
-      <p class="message confirmation">{confirmation}</p>
+    {#if save.error}<p class="message error">{save.error}</p>{/if}
+    {#if save.confirmation}
+      <p class="message confirmation">{save.confirmation}</p>
     {/if}
   </div>
 </section>

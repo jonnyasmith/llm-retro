@@ -1,15 +1,13 @@
 <script lang="ts">
-  import {
-    harnesses,
-    harnessLabels,
-    mapHarnesses,
-    type Harness,
-  } from '$lib/jobs/contracts';
+  import { harnesses, harnessLabels, mapHarnesses } from '$lib/jobs/contracts';
   import { saveSettings } from '$lib/settings/client';
-  import type {
-    ApplicationSettings,
-    SettingsChanges,
-  } from '$lib/settings/contracts';
+  import type { ApplicationSettings } from '$lib/settings/contracts';
+  import {
+    clearLogSource,
+    pinChangedLogSources,
+    type LogSourceEdit,
+  } from '$lib/settings/log-sources';
+  import { SettingsSave } from '$lib/settings/save.svelte';
   import { untrack } from 'svelte';
 
   let { settings }: { settings: ApplicationSettings } = $props();
@@ -23,64 +21,24 @@
       (harness) => initialSettings.logSourceOverrides[harness] !== undefined,
     ),
   );
-  let saving = $state(false);
-  let error = $state('');
-  let confirmation = $state('');
+  const save = new SettingsSave(
+    saveSettings,
+    'Unable to save Log source settings',
+  );
 
-  function pathsFrom(value: string): string[] {
-    return value
-      .split('\n')
-      .map((path) => path.trim())
-      .filter(Boolean);
-  }
-
-  function applyServerState(updatedHarnesses: readonly Harness[]) {
-    for (const harness of updatedHarnesses) {
-      const value = settings.logSources[harness].join('\n');
-      values[harness] = value;
-      baselines[harness] = value;
-      pinned[harness] = settings.logSourceOverrides[harness] !== undefined;
-    }
-  }
-
-  async function persist(
-    overrides: NonNullable<SettingsChanges['logSourceOverrides']>,
-    successMessage: string,
-    updatedHarnesses: readonly Harness[],
-  ) {
-    saving = true;
-    error = '';
-    confirmation = '';
-    try {
-      await saveSettings({ logSourceOverrides: overrides });
-      applyServerState(updatedHarnesses);
-      confirmation = successMessage;
-    } catch (cause) {
-      error =
-        cause instanceof Error
-          ? cause.message
-          : 'Unable to save Log source settings';
-    } finally {
-      saving = false;
-    }
-  }
-
-  async function save() {
-    const changedHarnesses = harnesses.filter(
-      (harness) => values[harness] !== baselines[harness],
-    );
-    const overrides = Object.fromEntries(
-      changedHarnesses.map((harness) => [harness, pathsFrom(values[harness])]),
-    );
-    await persist(overrides, 'Log source settings saved.', changedHarnesses);
-  }
-
-  async function reset(harness: Harness) {
-    await persist(
-      { [harness]: null },
-      `${harnessLabels[harness]} now follows built-in defaults.`,
-      [harness],
-    );
+  function submit(edit: LogSourceEdit, confirmation: string) {
+    return save.attempt({
+      changes: { logSourceOverrides: edit.overrides },
+      confirmation,
+      adopt: () => {
+        for (const harness of edit.harnesses) {
+          const value = settings.logSources[harness].join('\n');
+          values[harness] = value;
+          baselines[harness] = value;
+          pinned[harness] = settings.logSourceOverrides[harness] !== undefined;
+        }
+      },
+    });
   }
 </script>
 
@@ -111,8 +69,12 @@
             <button
               class="secondary-button"
               type="button"
-              onclick={() => reset(harness)}
-              disabled={saving}>Reset to defaults</button
+              onclick={() =>
+                submit(
+                  clearLogSource(harness),
+                  `${harnessLabels[harness]} now follows built-in defaults.`,
+                )}
+              disabled={save.saving}>Reset to defaults</button
             >
           {/if}
         </div>
@@ -125,12 +87,20 @@
     {/each}
   </div>
   <div class="actions">
-    <button type="button" onclick={save} disabled={saving}>
-      {saving ? 'Saving…' : 'Save Log sources'}
+    <button
+      type="button"
+      onclick={() =>
+        submit(
+          pinChangedLogSources(values, baselines),
+          'Log source settings saved.',
+        )}
+      disabled={save.saving}
+    >
+      {save.saving ? 'Saving…' : 'Save Log sources'}
     </button>
-    {#if error}<p class="message error">{error}</p>{/if}
-    {#if confirmation}
-      <p class="message confirmation">{confirmation}</p>
+    {#if save.error}<p class="message error">{save.error}</p>{/if}
+    {#if save.confirmation}
+      <p class="message confirmation">{save.confirmation}</p>
     {/if}
   </div>
 </section>
