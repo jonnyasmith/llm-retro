@@ -37,8 +37,12 @@ A unit of background work the app runs, identified by a type plus an optional sc
 _Avoid_: Task, worker, process, cron.
 
 **Job run**:
-A single execution of a Job — the persisted record of one attempt, carrying its status through its lifecycle, its timing and outcome, and a correlation id that both tags its logs and names the stream a user watches its progress on. The history of Job runs is what the Jobs screen shows; a run left mid-flight by a crashed process is reconciled to interrupted and the user re-triggers it.
+A single execution of a Job — the persisted record of one attempt, carrying its status through its lifecycle, its timing and outcome, and a correlation id that both tags its logs and names the stream a user watches its progress on. The history of Job runs is what the Jobs screen shows; a run left mid-flight by a crashed process is only recognised as interrupted by a later process at start-up, never by the run itself, and the user re-triggers it.
 _Avoid_: Task, invocation, execution, session.
+
+**Job run snapshot**:
+The complete state of a Job run at a moment — its status, how far it has got, and its outcome if it has one. What a watcher is given before it is given any change.
+_Avoid_: State, status update, initial event.
 
 **Checkpoint**:
 The record of how far Ingestion has consumed each log file, so a re-run or a restart after failure resumes from where it stopped and never reprocesses an already-ingested record. Resumption restarts at a genuine prompt boundary at or before the Checkpoint — usually the last one, or an earlier one where a Harness needs the preceding Interaction for context (ADR-0010) — because an Interaction is bounded by prompts (ADR-0001) and the one the Checkpoint fell inside must be rebuilt whole.
