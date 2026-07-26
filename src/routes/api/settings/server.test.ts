@@ -2,7 +2,7 @@ import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Database } from '$lib/server/database/connection';
+import type { Connection, Database } from '$lib/server/database/connection';
 import { openDatabase } from '$lib/server/database/connection';
 import {
   resolveDefaultLogSources,
@@ -31,7 +31,7 @@ vi.mock('$lib/server/bootstrap', () => ({
 import { POST } from './+server';
 
 const temporaryDirectories: string[] = [];
-let connection: ReturnType<typeof openDatabase>;
+let connection: Connection;
 
 function request(body: unknown): Request {
   return new Request('http://localhost/api/settings', {
@@ -57,7 +57,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  connection.sqlite.close();
+  connection.close();
   await Promise.all(
     temporaryDirectories
       .splice(0)
@@ -256,21 +256,23 @@ describe('settings endpoint', () => {
     } as Parameters<typeof POST>[0]);
     expect(invalidTimezoneResponse.status).toBe(400);
 
-    const rejectedArchiveRoot = join(
+    const strayArchiveRoot = join(
       temporaryDirectories[temporaryDirectories.length - 1],
-      'rejected-archive',
+      'stray-archive',
     );
     const combinedResponse = await POST({
       request: request({
         timezone: 'America/New_York',
         rawArchiveEnabled: true,
-        rawArchivePath: rejectedArchiveRoot,
+        rawArchivePath: strayArchiveRoot,
       }),
     } as Parameters<typeof POST>[0]);
     expect(combinedResponse.status).toBe(409);
-    await expect(stat(rejectedArchiveRoot)).rejects.toMatchObject({
-      code: 'ENOENT',
+    expect(connection.database.select().from(settings).get()).toMatchObject({
+      rawArchiveEnabled: false,
+      rawArchivePath: null,
     });
+    expect((await stat(strayArchiveRoot)).isDirectory()).toBe(true);
 
     const timezoneResponse = await POST({
       request: request({ timezone: 'America/New_York' }),

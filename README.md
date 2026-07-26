@@ -41,15 +41,18 @@ The Harnesses' own log files remain the system of record. The store is derived a
 
 ## Scripts
 
-| Command       | What it does                     |
-| ------------- | -------------------------------- |
-| `pnpm dev`    | Run the app in development       |
-| `pnpm build`  | Build for production             |
-| `pnpm start`  | Run the production build         |
-| `pnpm test`   | Run the test suite               |
-| `pnpm check`  | Type-check TypeScript and Svelte |
-| `pnpm lint`   | Prettier check plus ESLint       |
-| `pnpm format` | Rewrite files with Prettier      |
+| Command              | What it does                                      |
+| -------------------- | ------------------------------------------------- |
+| `pnpm dev`           | Run the app in development                        |
+| `pnpm build`         | Build for production                              |
+| `pnpm start`         | Run the production build                          |
+| `pnpm test`          | Run the test suite                                |
+| `pnpm test:browsers` | Download the Chromium build the client tests need |
+| `pnpm check`         | Type-check TypeScript and Svelte                  |
+| `pnpm lint`          | Prettier check plus ESLint                        |
+| `pnpm format`        | Rewrite files with Prettier                       |
+
+The suite runs in two projects from the one `pnpm test` command: server tests under Node, and client tests that render a screen in a real browser. The browser is not installed by `pnpm install` — run `pnpm test:browsers` once after cloning, or the client project fails to launch.
 
 ## Documentation
 

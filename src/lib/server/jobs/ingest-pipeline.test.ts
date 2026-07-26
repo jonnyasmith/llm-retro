@@ -1,13 +1,11 @@
 import {
   appendFile,
-  mkdir,
   readFile,
-  readdir,
   stat,
   utimes,
   writeFile,
 } from 'node:fs/promises';
-import { dirname, join, parse, relative, resolve } from 'node:path';
+import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -26,6 +24,7 @@ import {
   runPipeline,
   writeLines,
 } from './ingest-pipeline-fixture';
+import { rawArchiveDestination } from './raw-archive';
 
 afterEach(cleanupPipelineFixtures);
 
@@ -73,7 +72,7 @@ describe('Ingest pipeline', () => {
         filesDone: 2,
       });
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -107,7 +106,7 @@ describe('Ingest pipeline', () => {
           .all(),
       ).toEqual([{ key: 'p-1' }, { key: 'p-2' }]);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -163,7 +162,7 @@ describe('Ingest pipeline', () => {
         fileSize: grown.size,
       });
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -221,7 +220,7 @@ describe('Ingest pipeline', () => {
           .all(),
       ).toEqual(afterFirstRun);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -261,7 +260,7 @@ describe('Ingest pipeline', () => {
         { interactionKey: 'n-2', model: 'fake-model' },
       ]);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -309,7 +308,7 @@ describe('Ingest pipeline', () => {
         { stableSessionId: 'refined' },
       ]);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -339,11 +338,11 @@ describe('Ingest pipeline', () => {
         { interactionKey: 'fresh' },
       ]);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
-  it('archives raw bytes before parsing even when parsing fails', async () => {
+  it('archives a source file before the adapter reads its bytes', async () => {
     const fixture = await createPipelineFixture();
     const archiveRoot = join(fixture.root, 'raw-archive');
     const sessionPath = join(fixture.logSource, 'broken.log');
@@ -352,151 +351,24 @@ describe('Ingest pipeline', () => {
       rawArchiveEnabled: true,
       rawArchivePath: archiveRoot,
     });
+    // Codex, pi and omp all identify a Session by parsing the file's first
+    // record, so a malformed file throws here — before any parse of the slice.
+    const adapter = createFakeAdapter({
+      identify: () => {
+        throw new Error('Unreadable session metadata');
+      },
+    });
 
     try {
+      await expect(runPipeline(adapter, fixture.database)).rejects.toThrow(
+        'Unreadable session metadata',
+      );
+
       await expect(
-        runPipeline(createFakeAdapter(), fixture.database),
-      ).rejects.toThrow();
-      await expect(
-        readFile(archivePath(archiveRoot, sessionPath)),
+        readFile(rawArchiveDestination(archiveRoot, FAKE_HARNESS, sessionPath)),
       ).resolves.toEqual(Buffer.from('not valid json\n'));
     } finally {
-      fixture.sqlite.close();
-    }
-  });
-
-  it('skips an archive with matching metadata and replaces a changed one', async () => {
-    const fixture = await createPipelineFixture();
-    const archiveRoot = join(fixture.root, 'raw-archive');
-    const sessionPath = join(fixture.logSource, 'archived.log');
-    await writeLines(sessionPath, [
-      { key: 'arch-1', cwd: '/repo/one', timestamp: BASE },
-    ]);
-    persistSettings(fixture.database, {
-      rawArchiveEnabled: true,
-      rawArchivePath: archiveRoot,
-    });
-
-    try {
-      await runPipeline(createFakeAdapter(), fixture.database);
-      const archived = archivePath(archiveRoot, sessionPath);
-      const sourceStat = await stat(sessionPath);
-      const sentinel = Buffer.alloc(sourceStat.size, 122);
-      await writeFile(archived, sentinel);
-      const matching = new Date('2026-01-01T00:00:00.000Z');
-      await utimes(sessionPath, matching, matching);
-      await utimes(archived, matching, matching);
-
-      await runPipeline(createFakeAdapter(), fixture.database);
-      await expect(readFile(archived)).resolves.toEqual(sentinel);
-
-      await appendFile(
-        sessionPath,
-        `${JSON.stringify({ key: 'arch-2', cwd: '/repo/one', timestamp: BASE + 1_000 })}\n`,
-      );
-      const changed = new Date(matching.getTime() + 2_000);
-      await utimes(sessionPath, changed, changed);
-      await runPipeline(createFakeAdapter(), fixture.database);
-      await expect(readFile(archived)).resolves.toEqual(
-        await readFile(sessionPath),
-      );
-    } finally {
-      fixture.sqlite.close();
-    }
-  });
-
-  it('keeps identical relative paths from separate sources collision-free', async () => {
-    const fixture = await createPipelineFixture();
-    const archiveRoot = join(fixture.root, 'raw-archive');
-    const secondSource = join(fixture.root, 'second-source');
-    await writeLines(join(fixture.logSource, 'shared.log'), [
-      { key: 'first', cwd: '/repo/one', timestamp: BASE },
-    ]);
-    await mkdir(secondSource, { recursive: true });
-    await writeLines(join(secondSource, 'shared.log'), [
-      { key: 'second', cwd: '/repo/two', timestamp: BASE + 1_000 },
-    ]);
-    persistSettings(fixture.database, {
-      rawArchiveEnabled: true,
-      rawArchivePath: archiveRoot,
-      logSourceOverrides: { [FAKE_HARNESS]: [fixture.logSource, secondSource] },
-    });
-    const firstPath = join(fixture.logSource, 'shared.log');
-    const secondPath = join(secondSource, 'shared.log');
-    const adapter = createFakeAdapter({
-      identify: (primaryFilePath) => ({
-        stableSessionId: primaryFilePath,
-        metadata: { stableSessionId: primaryFilePath },
-      }),
-    });
-
-    try {
-      await runPipeline(adapter, fixture.database);
-
-      expect(archivePath(archiveRoot, firstPath)).not.toBe(
-        archivePath(archiveRoot, secondPath),
-      );
-      await expect(
-        readFile(archivePath(archiveRoot, firstPath)),
-      ).resolves.toEqual(await readFile(firstPath));
-      await expect(
-        readFile(archivePath(archiveRoot, secondPath)),
-      ).resolves.toEqual(await readFile(secondPath));
-    } finally {
-      fixture.sqlite.close();
-    }
-  });
-
-  it('rejects an enabled archive without a configured path', async () => {
-    const fixture = await createPipelineFixture();
-    await writeLines(join(fixture.logSource, 'a.log'), [
-      { key: 'a-1', cwd: '/repo/one', timestamp: BASE },
-    ]);
-    persistSettings(fixture.database, {
-      rawArchiveEnabled: true,
-      rawArchivePath: null,
-    });
-
-    try {
-      await expect(
-        runPipeline(createFakeAdapter(), fixture.database),
-      ).rejects.toThrow(
-        'Raw archive is enabled but no archive path is configured',
-      );
-    } finally {
-      fixture.sqlite.close();
-    }
-  });
-
-  it('removes the temporary archive file when the rename fails', async () => {
-    const fixture = await createPipelineFixture();
-    const archiveRoot = join(fixture.root, 'raw-archive');
-    const sessionPath = join(fixture.logSource, 'rename-fail.log');
-    await writeLines(sessionPath, [
-      { key: 'rf-1', cwd: '/repo/one', timestamp: BASE },
-    ]);
-    persistSettings(fixture.database, {
-      rawArchiveEnabled: true,
-      rawArchivePath: archiveRoot,
-    });
-
-    try {
-      await expect(
-        runPipeline(createFakeAdapter(), fixture.database, {
-          renameArchivedFile: async () => {
-            throw new Error('Injected archive rename failure');
-          },
-        }),
-      ).rejects.toThrow('Injected archive rename failure');
-
-      const destination = archivePath(archiveRoot, sessionPath);
-      await expect(readFile(destination)).rejects.toMatchObject({
-        code: 'ENOENT',
-      });
-      const entries = await readdir(dirname(destination));
-      expect(entries.filter((entry) => entry.endsWith('.tmp'))).toEqual([]);
-    } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -526,7 +398,7 @@ describe('Ingest pipeline', () => {
         { interactionKey: 'd-1', mainOutputTokens: 5 },
       ]);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -543,7 +415,7 @@ describe('Ingest pipeline', () => {
       const session = fixture.database.select().from(sessions).get();
       expect(session?.projectId).toBe(project?.id);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -568,7 +440,7 @@ describe('Ingest pipeline', () => {
         .all();
       expect(stored[0].projectId).not.toBe(stored[1].projectId);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -588,7 +460,7 @@ describe('Ingest pipeline', () => {
         subOutputTokens: null,
       });
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -629,7 +501,7 @@ describe('Ingest pipeline', () => {
         { interactionKey: 'main-1', subInputTokens: 4, subOutputTokens: 5 },
       ]);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -666,18 +538,7 @@ describe('Ingest pipeline', () => {
         new Set([storedProjects[0].id]),
       );
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 });
-
-function archivePath(archiveRoot: string, sourcePath: string): string {
-  const absoluteSource = resolve(sourcePath);
-  const filesystemRoot = parse(absoluteSource).root;
-  return join(
-    archiveRoot,
-    FAKE_HARNESS,
-    Buffer.from(filesystemRoot).toString('base64url'),
-    relative(filesystemRoot, absoluteSource),
-  );
-}

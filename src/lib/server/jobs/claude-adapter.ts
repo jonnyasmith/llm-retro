@@ -4,7 +4,6 @@ import {
   findClaudePromptBoundary,
   readClaudeSession,
   readClaudeSubTokenUpdates,
-  type NormalisedClaudeSession,
 } from './claude-log-reader';
 import type {
   IngestAdapter,
@@ -50,9 +49,7 @@ function parseClaudeSessionSlice({
   auxiliaryFiles,
 }: ParseSessionSliceInput<null>): NormalisedSession | null {
   if (primaryContents.length === 0) return null;
-  return toNormalisedSession(
-    readClaudeSession(primaryFilePath, primaryContents, auxiliaryFiles),
-  );
+  return readClaudeSession(primaryFilePath, primaryContents, auxiliaryFiles);
 }
 
 function readClaudeSliceSubTokenUpdates({
@@ -66,19 +63,6 @@ function readClaudeSliceSubTokenUpdates({
     completePrimaryContents,
     auxiliaryFiles,
   );
-}
-
-function toNormalisedSession(
-  session: NormalisedClaudeSession,
-): NormalisedSession {
-  return {
-    startedAt: session.startedAt,
-    endedAt: session.endedAt,
-    interactions: session.interactions.map((interaction) => ({
-      ...interaction,
-      spawnedSubagents: false,
-    })),
-  };
 }
 
 async function discoverSubagentFiles(sessionFilePath: string) {

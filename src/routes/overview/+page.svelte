@@ -1,9 +1,9 @@
 <script lang="ts">
   import PageIntro from '$lib/components/PageIntro.svelte';
+  import { formatCount } from '$lib/format';
   import type { PageProps } from './$types';
 
   let { data }: PageProps = $props();
-  const number = new Intl.NumberFormat('en-GB');
 </script>
 
 <svelte:head>
@@ -33,20 +33,20 @@
     <div class="metrics">
       <article>
         <span>Interactions</span>
-        <strong>{number.format(data.totals.interactionCount)}</strong>
+        <strong>{formatCount(data.totals.interactionCount)}</strong>
         <p>User-initiated work that received a Model response.</p>
       </article>
       <article>
         <span>Total tokens</span>
-        <strong>{number.format(data.totals.totalTokens)}</strong>
+        <strong>{formatCount(data.totals.totalTokens)}</strong>
         <p>Main and sub-agent usage across every canonical token bucket.</p>
       </article>
     </div>
 
     {#if data.totals.interactionCount === 0}
       <p class="empty">
-        No Interactions have been recorded yet. Run Claude ingestion from Jobs
-        to populate this overview.
+        No Interactions have been recorded yet. Run ingestion from Jobs to
+        populate this overview.
       </p>
     {/if}
   </section>

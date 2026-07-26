@@ -83,7 +83,7 @@ describe('Codex log grammar', () => {
       expect(resolveProject).toHaveBeenCalledTimes(1);
       expect(resolveProject).toHaveBeenCalledWith('/work/codex/subdirectory');
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -120,7 +120,7 @@ describe('Codex log grammar', () => {
         }),
       ]);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -183,7 +183,7 @@ describe('Codex log grammar', () => {
         }),
       ]);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -230,7 +230,7 @@ describe('Codex log grammar', () => {
         expect.objectContaining({ interactionKey: 'archived-prompt' }),
       ]);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 });

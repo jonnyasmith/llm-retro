@@ -15,8 +15,8 @@ import {
   type ParseSessionSliceInput,
   type ResumeBoundary,
   type SubTokenUpdateInput,
-  type TokenBuckets,
 } from './ingest-pipeline';
+import { nullTokenBuckets, type TokenBuckets } from './token-buckets';
 import { findLastPromptBoundary } from './jsonl-scan';
 import {
   literalCwdProjectResolver,
@@ -104,14 +104,12 @@ export async function runPipeline(
   options: {
     correlationId?: string;
     resolveProject?: CwdProjectResolver;
-    renameArchivedFile?: (oldPath: string, newPath: string) => Promise<void>;
     progress?: (progress: unknown) => void;
     log?: (message: string) => void;
   } = {},
 ): Promise<void> {
   const handler = createIngestHandler(adapter, {
     resolveProject: options.resolveProject ?? literalCwdProjectResolver,
-    renameArchivedFile: options.renameArchivedFile,
   });
   await handler.run(null, {
     correlationId: options.correlationId ?? 'pipeline-test',
@@ -146,15 +144,8 @@ export async function writeLines(
   );
 }
 
-const NULL_BUCKETS: TokenBuckets = {
-  input: null,
-  output: null,
-  cacheRead: null,
-  cacheWrite: null,
-};
-
 function toBuckets(partial?: Partial<TokenBuckets>): TokenBuckets {
-  return { ...NULL_BUCKETS, ...partial };
+  return { ...nullTokenBuckets(), ...partial };
 }
 
 async function defaultEnumerate(

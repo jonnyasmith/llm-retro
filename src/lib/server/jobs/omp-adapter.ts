@@ -1,9 +1,7 @@
 import { readdir } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import {
-  findOmpPromptBoundary,
-  readOmpSession,
-  readOmpSessionMetadata,
+  ompGrammar,
   readOmpSubTokenUpdates,
   type OmpSessionMetadata,
 } from './omp-log-reader';
@@ -19,12 +17,18 @@ export const ompIngestAdapter: IngestAdapter<OmpSessionMetadata> = {
   harness: 'omp',
   enumerateSourceFileGroups: enumerateOmpSourceFileGroups,
   identifySession(primaryFilePath, primaryContents) {
-    const metadata = readOmpSessionMetadata(primaryFilePath, primaryContents);
+    const metadata = ompGrammar.readSessionMetadata(
+      primaryFilePath,
+      primaryContents,
+    );
     return { stableSessionId: metadata.stableSessionId, metadata };
   },
   findResumeBoundary(primaryContents, beforeByteOffset, metadata) {
     return {
-      byteOffset: findOmpPromptBoundary(primaryContents, beforeByteOffset),
+      byteOffset: ompGrammar.findPromptBoundary(
+        primaryContents,
+        beforeByteOffset,
+      ),
       metadata,
     };
   },
@@ -49,17 +53,12 @@ function parseOmpSessionSlice({
   metadata,
 }: ParseSessionSliceInput<OmpSessionMetadata>) {
   if (primaryContents.length === 0) return null;
-  const parsed = readOmpSession(
+  return ompGrammar.readSession(
     primaryFilePath,
     primaryContents,
     auxiliaryFiles,
     metadata,
   );
-  return {
-    startedAt: parsed.startedAt,
-    endedAt: parsed.endedAt,
-    interactions: parsed.interactions,
-  };
 }
 
 function readOmpSliceSubTokenUpdates({

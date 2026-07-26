@@ -17,11 +17,11 @@ One user prompt together with all model and tool activity it triggers, up to the
 _Avoid_: Turn, message, request, exchange, prompt.
 
 **Model**:
-The specific LLM that served an Interaction, canonicalised to one identity (e.g. `claude-opus-4-8`, `gpt-5.1-codex-max`) so the same model aggregates across Harnesses, with the verbatim string the Harness reported retained alongside as provenance. The "which models I reach for" dimension. Its provider (anthropic, openai, …) is a derived attribute, not the identity.
+The specific LLM that served an Interaction, canonicalised to one identity (e.g. `claude-opus-4-8`, `gpt-5.1-codex-max`) so the same model aggregates across Harnesses, with the verbatim string the Harness reported retained alongside as provenance. Where several models responded within one Interaction, the Model that served it is the one with the most output tokens once every variant spelling has been reduced to its canonical identity — so two spellings of one Model are one candidate, never rivals — and its provenance is the highest-output spelling of that winner, ties going to the first the Harness recorded. The "which models I reach for" dimension. Its provider (anthropic, openai, …) is a derived attribute, not the identity.
 _Avoid_: LLM, engine, model family.
 
 **Token usage**:
-An Interaction's consumption expressed in four canonical buckets — `input`, `output`, `cache_read`, `cache_write` — normalised from whatever each Harness reports. A bucket a Harness does not report is null (absent), never zero; zero means genuinely zero.
+An Interaction's consumption expressed in four canonical buckets — input, output, cache read, and cache write — normalised from whatever each Harness reports. A bucket a Harness does not report is null (absent), never zero; zero means genuinely zero.
 _Avoid_: Cost, spend, credits, premium requests.
 
 **Project**:
@@ -37,7 +37,7 @@ A unit of background work the app runs, identified by a type plus an optional sc
 _Avoid_: Task, worker, process, cron.
 
 **Job run**:
-A single execution of a Job — the persisted record of one attempt, carrying its status through its lifecycle, its timing and outcome, and a correlation id that both tags its logs and names the stream a user watches its progress on. The history of Job runs is what the Jobs screen shows; a run left mid-flight by a crashed process is only recognised as interrupted by a later process at start-up, never by the run itself, and the user re-triggers it.
+A single execution of a Job — the persisted record of one attempt, carrying its status through its lifecycle, its timing and outcome, and a correlation id that both tags its logs and names the stream a user watches its progress on. A run of the Ingestion Job is spoken of as an "Ingestion run"; that is shorthand for this term, not a concept of its own. The history of Job runs is what the Jobs screen shows; a run left mid-flight by a crashed process is only recognised as interrupted by a later process at start-up, never by the run itself, and the user re-triggers it.
 _Avoid_: Task, invocation, execution, session.
 
 **Job run snapshot**:
@@ -49,9 +49,21 @@ The record of how far Ingestion has consumed each log file, so a re-run or a res
 _Avoid_: Offset, cursor, watermark, bookmark.
 
 **Raw archive**:
-An opt-in copy of untouched source files beneath an app-owned root, organised by Harness. It protects history when a Harness prunes, rotates, or relocates its own logs; it is not the normalised query store.
-_Avoid_: Backup database, query store.
+An opt-in copy of untouched source files beneath an app-owned root, organised by Harness. It protects history when a Harness prunes, rotates, or relocates its own logs; it is not the Store.
+_Avoid_: Backup database, Store.
 
 **Log source**:
 One of the per-Harness root paths that Ingestion enumerates for session logs. Each Harness follows built-in defaults unless the user pins it to one or more override paths.
-_Avoid_: Archive root, data directory.
+_Avoid_: Archive root, session directory.
+
+**Settings**:
+The user's application-wide preferences — the timezone history is bucketed into, whether the Raw archive is kept and where, and any pinned Log source overrides. There is one set of Settings for the tool, not one per Project or Harness. An Ingestion run reads them once and holds that snapshot for its duration (ADR-0011), so saving never alters work already in flight.
+_Avoid_: Config, preferences, options.
+
+**Store**:
+The normalised, queryable record of everything Ingestion has consumed — the Interactions, and the Sessions, Projects, Models and Job runs they roll up to. It holds no prompt or response text and is derived and rebuildable, the Harnesses' own logs remaining the system of record (ADR-0003). Every metric the tool reports is answered from the Store; it is not the Raw archive.
+_Avoid_: Index, warehouse, cache, backup.
+
+**Connection**:
+The single, process-wide, open route through which the Store is read and written. There is one for the life of the process, shared by every screen and every Job run concurrently (ADR-0006) — not one per request, per Job, or per query. Distinct from the connection a browser holds open to watch a Job run's progress (ADR-0004).
+_Avoid_: Handle, client, pool, session.

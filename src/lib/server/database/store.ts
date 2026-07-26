@@ -3,7 +3,7 @@ import type { AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { harnesses } from '../../jobs/contracts';
-import type { Database } from './connection';
+import type { Database, DatabaseTransaction } from './connection';
 import type { JobIdentity } from '../jobs/types';
 import type {
   ApplicationSettings,
@@ -12,20 +12,11 @@ import type {
 } from '../../settings/contracts';
 import { IngestionActiveError } from '../settings/errors';
 import { interactions, jobRuns, projects, sessions, settings } from './schema';
-import { deriveLocalBuckets } from './time-buckets';
+import {
+  createLocalBucketDeriver,
+  type LocalBucketDeriver,
+} from './time-buckets';
 import { providerOf } from '../model';
-
-export type {
-  ApplicationSettings,
-  LogSources,
-  SettingsChanges,
-} from '../../settings/contracts';
-
-type NewInteraction = typeof interactions.$inferInsert;
-type StoredInteraction = typeof interactions.$inferSelect;
-type DatabaseTransaction = Parameters<
-  Parameters<Database['transaction']>[0]
->[0];
 
 function resolveOperatingSystemTimezone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -63,10 +54,19 @@ export function getSettings(
   };
 }
 
+/**
+ * Writes Settings values, rebuilding every Interaction's local buckets in the
+ * same transaction when the timezone moves.
+ *
+ * A primitive as far as Settings policy goes: whether the values are allowed is
+ * the settings module's job. Two things here are not policy — a timezone no
+ * bucket deriver can be built for, which would leave the Store unable to bucket
+ * its own rows, and ADR-0011's concurrency rule, which is an invariant of this
+ * write rather than something a caller selects.
+ */
 export function persistSettings(
   database: Database,
   changes: SettingsChanges,
-  options: { rejectTimezoneChangeDuringIngestion?: boolean } = {},
 ): ApplicationSettings {
   const stored = database.select().from(settings).get();
   const current = getSettings(database);
@@ -89,23 +89,21 @@ export function persistSettings(
         : changes.rawArchivePath,
     logSourceOverrides,
   };
-  deriveLocalBuckets(0, values.timezone);
+  const deriver = createLocalBucketDeriver(values.timezone);
 
   database.transaction((transaction) => {
     if (current.timezone !== values.timezone) {
-      if (options.rejectTimezoneChangeDuringIngestion) {
-        const activeIngestion = transaction
-          .select({ id: jobRuns.id })
-          .from(jobRuns)
-          .where(and(eq(jobRuns.type, 'ingest'), eq(jobRuns.status, 'running')))
-          .get();
-        if (activeIngestion) {
-          throw new IngestionActiveError(
-            'An Ingestion run is running; retry when it has finished',
-          );
-        }
+      const activeIngestion = transaction
+        .select({ id: jobRuns.id })
+        .from(jobRuns)
+        .where(and(eq(jobRuns.type, 'ingest'), eq(jobRuns.status, 'running')))
+        .get();
+      if (activeIngestion) {
+        throw new IngestionActiveError(
+          'Ingestion is running; retry when it has finished',
+        );
       }
-      recomputeWithTransaction(transaction, values.timezone);
+      recomputeWithTransaction(transaction, deriver);
     }
 
     transaction
@@ -116,33 +114,6 @@ export function persistSettings(
   });
 
   return getSettings(database);
-}
-
-export function insertInteraction(
-  database: Database,
-  interaction: NewInteraction,
-): StoredInteraction {
-  database
-    .insert(interactions)
-    .values(interaction)
-    .onConflictDoNothing({
-      target: [interactions.sessionId, interactions.interactionKey],
-    })
-    .run();
-
-  const stored = database
-    .select()
-    .from(interactions)
-    .where(
-      and(
-        eq(interactions.sessionId, interaction.sessionId),
-        eq(interactions.interactionKey, interaction.interactionKey),
-      ),
-    )
-    .get();
-
-  if (!stored) throw new Error('Interaction insertion did not persist a row');
-  return stored;
 }
 
 export function listJobRuns(
@@ -157,50 +128,6 @@ export function listJobRuns(
     .where(and(eq(jobRuns.type, identity.type), eq(jobRuns.scope, scope)))
     .orderBy(desc(jobRuns.id))
     .limit(limit)
-    .all();
-}
-
-export function hasActiveIngestRun(database: Database): boolean {
-  return (
-    database
-      .select({ id: jobRuns.id })
-      .from(jobRuns)
-      .where(and(eq(jobRuns.type, 'ingest'), eq(jobRuns.status, 'running')))
-      .get() !== undefined
-  );
-}
-
-export function getOverviewTotals(database: Database) {
-  const totals = database
-    .select({
-      interactionCount: count(),
-      totalTokens: sql<number>`coalesce(sum(
-        coalesce(${interactions.mainInputTokens}, 0) +
-        coalesce(${interactions.mainOutputTokens}, 0) +
-        coalesce(${interactions.mainCacheReadTokens}, 0) +
-        coalesce(${interactions.mainCacheWriteTokens}, 0) +
-        coalesce(${interactions.subInputTokens}, 0) +
-        coalesce(${interactions.subOutputTokens}, 0) +
-        coalesce(${interactions.subCacheReadTokens}, 0) +
-        coalesce(${interactions.subCacheWriteTokens}, 0)
-      ), 0)`,
-    })
-    .from(interactions)
-    .get();
-
-  return totals ?? { interactionCount: 0, totalTokens: 0 };
-}
-
-export function getActivityHeatmap(database: Database) {
-  return database
-    .select({
-      localDow: interactions.localDow,
-      localHour: interactions.localHour,
-      interactionCount: count(),
-    })
-    .from(interactions)
-    .groupBy(interactions.localDow, interactions.localHour)
-    .orderBy(interactions.localDow, interactions.localHour)
     .all();
 }
 
@@ -231,6 +158,42 @@ function nullAwareSum(columns: TokenColumn[]) {
   return sql<
     number | null
   >`sum(case when ${allNull} then null else ${reportedSum} end)`;
+}
+
+export function getOverviewTotals(database: Database) {
+  // An aggregate select with no grouping always returns exactly one row.
+  const [totals] = database
+    .select({
+      interactionCount: count(),
+      totalTokens: nullAwareSum(allTokenColumns),
+    })
+    .from(interactions)
+    .all();
+
+  // Every rollup consumer renders an absent bucket as an em dash; the overview
+  // renders its total through a plain number formatter with no absent branch,
+  // so an empty store must read as a genuine zero. A deliberate divergence from
+  // the null-not-zero rule, named so it stays a visible decision rather than a
+  // second, silently different SQL expression.
+  const absentTotalAsZero = totals.totalTokens ?? 0;
+
+  return {
+    interactionCount: totals.interactionCount,
+    totalTokens: absentTotalAsZero,
+  };
+}
+
+export function getActivityHeatmap(database: Database) {
+  return database
+    .select({
+      localDow: interactions.localDow,
+      localHour: interactions.localHour,
+      interactionCount: count(),
+    })
+    .from(interactions)
+    .groupBy(interactions.localDow, interactions.localHour)
+    .orderBy(interactions.localDow, interactions.localHour)
+    .all();
 }
 
 // Combined display buckets pair each main column with its sub column; the total
@@ -375,19 +338,9 @@ export function getSessionShape(database: Database) {
   };
 }
 
-export function recomputeLocalBuckets(
-  database: Database,
-  timezone: string,
-): number {
-  deriveLocalBuckets(0, timezone);
-  return database.transaction((transaction) =>
-    recomputeWithTransaction(transaction, timezone),
-  );
-}
-
 function recomputeWithTransaction(
   transaction: DatabaseTransaction,
-  timezone: string,
+  deriver: LocalBucketDeriver,
 ): number {
   const storedInteractions = transaction
     .select({ id: interactions.id, timestamp: interactions.timestamp })
@@ -397,7 +350,7 @@ function recomputeWithTransaction(
   for (const interaction of storedInteractions) {
     transaction
       .update(interactions)
-      .set(deriveLocalBuckets(interaction.timestamp, timezone))
+      .set(deriver.derive(interaction.timestamp))
       .where(eq(interactions.id, interaction.id))
       .run();
   }

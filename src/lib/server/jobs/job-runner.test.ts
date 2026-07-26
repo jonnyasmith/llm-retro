@@ -105,13 +105,13 @@ describe('Job dispatcher contract', () => {
 
     try {
       expect(
-        fixture.sqlite
+        fixture.unsafeSqlite
           .prepare("select name from sqlite_master where type = 'table'")
           .pluck()
           .all(),
       ).toContain('job_run');
       expect(() =>
-        fixture.sqlite
+        fixture.unsafeSqlite
           .prepare(
             `insert into job_run
               (type, scope, correlation_id, status, files_total, files_done)
@@ -120,7 +120,7 @@ describe('Job dispatcher contract', () => {
           .run('stub', '', crypto.randomUUID(), 'cancelled', 0, 0),
       ).toThrow(/job_run_status_valid/);
       expect(() =>
-        fixture.sqlite
+        fixture.unsafeSqlite
           .prepare(
             `insert into job_run
               (type, scope, correlation_id, status, started_at, files_total, files_done)
@@ -152,7 +152,7 @@ describe('Job dispatcher contract', () => {
           .run(),
       ).toThrow(/UNIQUE constraint failed/);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -203,7 +203,7 @@ describe('Job dispatcher contract', () => {
         fixture.waitForTerminal(other.correlationId),
       ]);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -245,7 +245,7 @@ describe('Job dispatcher contract', () => {
       job.release();
       await fixture.waitForTerminal(restarted.correlationId);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -348,7 +348,7 @@ describe('Job dispatcher contract', () => {
         errorsBeforeReplay,
       );
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -418,7 +418,7 @@ describe('Job dispatcher contract', () => {
       await Promise.resolve();
       expect(fixture.database.select().from(jobRuns).all()).toHaveLength(1);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 });
@@ -541,7 +541,7 @@ describe('stub Job checkpoint contract', () => {
         0,
       );
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 });

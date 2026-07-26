@@ -1,13 +1,3 @@
-import { randomUUID } from 'node:crypto';
-import {
-  mkdir,
-  open,
-  rename,
-  rm,
-  stat,
-  type FileHandle,
-} from 'node:fs/promises';
-import { basename, dirname, join, parse, relative, resolve } from 'node:path';
 import { and, eq } from 'drizzle-orm';
 import { harnessLabels, type Harness } from '../../jobs/contracts';
 import {
@@ -17,21 +7,19 @@ import {
   sessions,
 } from '../database/schema';
 import { getSettings } from '../database/store';
-import { deriveLocalBuckets } from '../database/time-buckets';
+import {
+  createLocalBucketDeriver,
+  type LocalBucketDeriver,
+} from '../database/time-buckets';
 import {
   resolveGitProject,
   type CwdProjectResolver,
   type ResolvedProject,
 } from './project-resolver';
-import { isMissingPath } from './missing-path';
+import { createRawArchive } from './raw-archive';
+import { readStableSourceFile, type SourceFileRead } from './source-file-read';
 import type { JobHandler } from './types';
-
-export interface TokenBuckets {
-  input: number | null;
-  output: number | null;
-  cacheRead: number | null;
-  cacheWrite: number | null;
-}
+import type { TokenBuckets } from './token-buckets';
 
 export interface NormalisedInteraction {
   interactionKey: string;
@@ -114,25 +102,17 @@ export interface IngestAdapter<Metadata> {
   ): InteractionUpdate[];
 }
 
-type ArchivedFileRename = (oldPath: string, newPath: string) => Promise<void>;
-
 export function createIngestHandler<Metadata>(
   adapter: IngestAdapter<Metadata>,
-  options: {
-    resolveProject?: CwdProjectResolver;
-    renameArchivedFile?: ArchivedFileRename;
-  } = {},
+  options: { resolveProject?: CwdProjectResolver } = {},
 ): JobHandler<null> {
   const resolveProject = options.resolveProject ?? resolveGitProject;
-  const renameArchivedFile = options.renameArchivedFile ?? rename;
 
   return {
     async run(_payload, context) {
       const settings = getSettings(context.database);
-      const archiveRoot = resolveRawArchiveRoot(
-        settings.rawArchiveEnabled,
-        settings.rawArchivePath,
-      );
+      const archive = createRawArchive(adapter.harness, settings);
+      const deriver = createLocalBucketDeriver(settings.timezone);
       const sourceFileGroups = await adapter.enumerateSourceFileGroups(
         settings.logSources[adapter.harness],
       );
@@ -151,27 +131,21 @@ export function createIngestHandler<Metadata>(
         });
         context.log(`Reading ${filePath}`);
 
-        const primarySnapshot = await readStableSourceFile(filePath);
-        const auxiliarySnapshots = await Promise.all(
+        const primaryRead = await readStableSourceFile(filePath);
+        const auxiliaryReads = await Promise.all(
           sourceFileGroup.auxiliaryFilePaths.map(readStableSourceFile),
         );
-        const { stableSessionId, metadata } = adapter.identifySession(
-          filePath,
-          primarySnapshot.contents,
-        );
 
-        if (archiveRoot !== null) {
-          for (const source of [primarySnapshot, ...auxiliarySnapshots]) {
-            await archiveSourceFile(
-              archiveRoot,
-              adapter.harness,
-              source,
-              renameArchivedFile,
-            );
-          }
+        for (const source of [primaryRead, ...auxiliaryReads]) {
+          await archive.store(source);
         }
 
-        const completeByteOffset = primarySnapshot.contents.lastIndexOf(10) + 1;
+        const { stableSessionId, metadata } = adapter.identifySession(
+          filePath,
+          primaryRead.contents,
+        );
+
+        const completeByteOffset = primaryRead.contents.lastIndexOf(10) + 1;
         const storedCheckpoint = context.database
           .select()
           .from(checkpoints)
@@ -193,11 +167,11 @@ export function createIngestHandler<Metadata>(
           )
           .get();
         const metadataMatches =
-          storedCheckpoint?.fileSize === primarySnapshot.fileSize &&
-          storedCheckpoint.fileMtime === primarySnapshot.fileMtime;
+          storedCheckpoint?.fileSize === primaryRead.fileSize &&
+          storedCheckpoint.fileMtime === primaryRead.fileMtime;
         if (
           metadataMatches &&
-          auxiliarySnapshots.length === 0 &&
+          auxiliaryReads.length === 0 &&
           existingSession?.logFilePath === filePath
         ) {
           context.log(`Skipped unchanged ${filePath}`);
@@ -210,7 +184,7 @@ export function createIngestHandler<Metadata>(
 
         const canResumeGrowth =
           storedCheckpoint !== undefined &&
-          primarySnapshot.fileSize > storedCheckpoint.fileSize &&
+          primaryRead.fileSize > storedCheckpoint.fileSize &&
           storedCheckpoint.lastCompleteRecordByteOffset <= completeByteOffset;
         const resumeByteOffset = metadataMatches
           ? completeByteOffset
@@ -220,15 +194,15 @@ export function createIngestHandler<Metadata>(
         const resumingPrimary = resumeByteOffset > 0;
         const boundary = resumingPrimary
           ? adapter.findResumeBoundary(
-              primarySnapshot.contents,
+              primaryRead.contents,
               resumeByteOffset,
               metadata,
             )
           : { byteOffset: 0, metadata };
-        const auxiliaryFiles = auxiliarySnapshots.map(toSourceContents);
+        const auxiliaryFiles = auxiliaryReads.map(toSourceContents);
         const session = adapter.parseSessionSlice({
           primaryFilePath: filePath,
-          primaryContents: primarySnapshot.contents
+          primaryContents: primaryRead.contents
             .subarray(boundary.byteOffset, completeByteOffset)
             .toString('utf8'),
           auxiliaryFiles,
@@ -236,7 +210,7 @@ export function createIngestHandler<Metadata>(
         });
         const interactionUpdates = adapter.readSubTokenUpdates({
           primaryFilePath: filePath,
-          completePrimaryContents: primarySnapshot.contents
+          completePrimaryContents: primaryRead.contents
             .subarray(0, completeByteOffset)
             .toString('utf8'),
           auxiliaryFiles,
@@ -260,13 +234,13 @@ export function createIngestHandler<Metadata>(
           session,
           interactionUpdates,
           resolvedProjects,
-          settings.timezone,
+          deriver,
           existingSession,
           resumingPrimary,
           {
             lastCompleteRecordByteOffset: completeByteOffset,
-            fileSize: primarySnapshot.fileSize,
-            fileMtime: primarySnapshot.fileMtime,
+            fileSize: primaryRead.fileSize,
+            fileMtime: primaryRead.fileMtime,
           },
         );
         context.log(`Ingested ${filePath}`);
@@ -279,113 +253,10 @@ export function createIngestHandler<Metadata>(
   };
 }
 
-interface SourceSnapshot {
-  filePath: string;
-  contents: Buffer;
-  fileSize: number;
-  fileMtime: number;
-  atime: Date;
-  mtime: Date;
-}
-
-async function readStableSourceFile(filePath: string): Promise<SourceSnapshot> {
-  const fileHandle = await open(filePath, 'r');
-  try {
-    const before = await fileHandle.stat();
-    const contents = await fileHandle.readFile();
-    const after = await fileHandle.stat();
-    if (before.size !== after.size || before.mtimeMs !== after.mtimeMs) {
-      throw new Error(`File changed while it was being read: ${filePath}`);
-    }
-    return {
-      filePath,
-      contents,
-      fileSize: after.size,
-      fileMtime: Math.trunc(after.mtimeMs),
-      atime: after.atime,
-      mtime: after.mtime,
-    };
-  } finally {
-    await fileHandle.close();
-  }
-}
-
-function resolveRawArchiveRoot(
-  enabled: boolean,
-  configuredPath: string | null,
-): string | null {
-  if (!enabled) return null;
-  if (configuredPath === null || configuredPath.trim().length === 0) {
-    throw new Error('Raw archive is enabled but no archive path is configured');
-  }
-  return resolve(configuredPath);
-}
-
-async function archiveSourceFile(
-  archiveRoot: string,
-  harness: Harness,
-  source: SourceSnapshot,
-  renameArchivedFile: ArchivedFileRename,
-): Promise<void> {
-  const destination = rawArchiveDestination(
-    archiveRoot,
-    harness,
-    source.filePath,
-  );
-  try {
-    const archived = await stat(destination);
-    if (
-      archived.size === source.fileSize &&
-      Math.abs(archived.mtimeMs - source.fileMtime) < 1
-    ) {
-      return;
-    }
-  } catch (cause) {
-    if (!isMissingPath(cause)) throw cause;
-  }
-
-  await mkdir(dirname(destination), { recursive: true });
-  const temporaryPath = join(
-    dirname(destination),
-    `.${basename(destination)}.${randomUUID()}.tmp`,
-  );
-  let temporaryHandle: FileHandle | undefined;
-  try {
-    temporaryHandle = await open(temporaryPath, 'wx');
-    await temporaryHandle.writeFile(source.contents);
-    await temporaryHandle.utimes(source.atime, source.mtime);
-    await temporaryHandle.sync();
-    await temporaryHandle.close();
-    temporaryHandle = undefined;
-    await renameArchivedFile(temporaryPath, destination);
-  } finally {
-    try {
-      await temporaryHandle?.close();
-    } finally {
-      await rm(temporaryPath, { force: true });
-    }
-  }
-}
-
-function rawArchiveDestination(
-  archiveRoot: string,
-  harness: Harness,
-  sourcePath: string,
-) {
-  const absoluteSource = resolve(sourcePath);
-  const filesystemRoot = parse(absoluteSource).root;
-  return join(
-    archiveRoot,
-    harness,
-    Buffer.from(filesystemRoot).toString('base64url'),
-    relative(filesystemRoot, absoluteSource),
-  );
-}
-
-function toSourceContents(snapshot: SourceSnapshot): IngestSourceContents {
+function toSourceContents(read: SourceFileRead): IngestSourceContents {
   return {
-    filePath: snapshot.filePath,
-    contents: snapshot.contents.toString('utf8'),
+    filePath: read.filePath,
+    contents: read.contents.toString('utf8'),
   };
 }
 
@@ -397,7 +268,7 @@ function storeSessionSlice<Metadata>(
   session: NormalisedSession | null,
   interactionUpdates: InteractionUpdate[],
   resolvedProjects: Map<string, ResolvedProject>,
-  timezone: string,
+  deriver: LocalBucketDeriver,
   existingSession: typeof sessions.$inferSelect | undefined,
   resumingPrimary: boolean,
   checkpoint: {
@@ -516,7 +387,7 @@ function storeSessionSlice<Metadata>(
         subCacheWriteTokens: interaction.subTokens.cacheWrite,
         spawnedSubagents: interaction.spawnedSubagents,
         timestamp: interaction.timestamp,
-        ...deriveLocalBuckets(interaction.timestamp, timezone),
+        ...deriver.derive(interaction.timestamp),
       };
       transaction
         .insert(interactions)

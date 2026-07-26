@@ -1,5 +1,6 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
+  import { formatDuration, formatUtcTimestamp } from '$lib/format';
   import {
     harnessLabels,
     isTerminalJobRunStatus,
@@ -16,21 +17,19 @@
   } = $props();
   const harnessLabel = $derived(harnessLabels[harness]);
 
-  function formatTimestamp(timestamp: number | null): string {
-    if (timestamp === null) return 'Not started';
-    return new Date(timestamp)
-      .toISOString()
-      .replace('T', ' ')
-      .replace('.000Z', ' UTC');
+  // Lifecycle position, not a rendered number: a Job run with no start instant
+  // is queued, and one with no finish instant is still in flight.
+  function startedLabel(startedAt: number | null): string {
+    return startedAt === null ? 'Not started' : formatUtcTimestamp(startedAt);
   }
 
-  function formatDuration(startedAt: number | null, finishedAt: number | null) {
+  function durationLabel(
+    startedAt: number | null,
+    finishedAt: number | null,
+  ): string {
     if (startedAt === null) return 'Waiting';
     if (finishedAt === null) return 'In progress';
-    const milliseconds = finishedAt - startedAt;
-    return milliseconds < 1_000
-      ? `${milliseconds} ms`
-      : `${(milliseconds / 1_000).toFixed(1)} s`;
+    return formatDuration(finishedAt - startedAt);
   }
 </script>
 
@@ -65,10 +64,10 @@
                 datetime={run.startedAt === null
                   ? undefined
                   : new Date(run.startedAt).toISOString()}
-                >{formatTimestamp(run.startedAt)}</time
+                >{startedLabel(run.startedAt)}</time
               >
             </td>
-            <td>{formatDuration(run.startedAt, run.finishedAt)}</td>
+            <td>{durationLabel(run.startedAt, run.finishedAt)}</td>
             <td>{run.filesDone} / {run.filesTotal}</td>
             <td>
               <a

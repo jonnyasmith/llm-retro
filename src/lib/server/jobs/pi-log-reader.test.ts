@@ -172,7 +172,7 @@ describe('pi log grammar', () => {
         }),
       ]);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 });

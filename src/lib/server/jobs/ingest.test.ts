@@ -60,7 +60,7 @@ describe.each(harnesses)('%s ingest', (harness) => {
         fixture.database.select(TOTALS_COLUMNS).from(interactions).all(),
       ).toEqual(scenario.expectedTotals);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -95,8 +95,8 @@ describe.each(harnesses)('%s ingest', (harness) => {
       );
       expect(resumedTotals).toEqual(scenario.expectedTotals);
     } finally {
-      fixture.sqlite.close();
-      fullFixture.sqlite.close();
+      fixture.close();
+      fullFixture.close();
     }
   });
 });

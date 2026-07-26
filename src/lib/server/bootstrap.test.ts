@@ -21,7 +21,7 @@ describe('application bootstrap', () => {
         startedAt: 1,
       })
       .run();
-    beforeBoot.sqlite.close();
+    beforeBoot.close();
 
     const { bootstrap } = await import('./bootstrap');
     const { GET } = await import('../../routes/api/health/+server');
@@ -30,11 +30,11 @@ describe('application bootstrap', () => {
       expect(bootstrap.databasePath).toBe(
         join(dataDirectory, 'llm-retro.sqlite3'),
       );
-      expect(bootstrap.sqlite.pragma('journal_mode', { simple: true })).toBe(
-        'wal',
-      );
       expect(
-        bootstrap.sqlite
+        bootstrap.unsafeSqlite.pragma('journal_mode', { simple: true }),
+      ).toBe('wal');
+      expect(
+        bootstrap.unsafeSqlite
           .prepare(
             "select count(*) from sqlite_master where type = 'table' and name = '__drizzle_migrations'",
           )
@@ -58,7 +58,7 @@ describe('application bootstrap', () => {
         bootstrap.dispatcher,
       );
     } finally {
-      bootstrap.sqlite.close();
+      bootstrap.close();
       await rm(dataDirectory, { recursive: true, force: true });
     }
   });

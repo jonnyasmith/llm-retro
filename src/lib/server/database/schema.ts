@@ -9,7 +9,11 @@ import {
   unique,
   uniqueIndex,
 } from 'drizzle-orm/sqlite-core';
-import { jobRunStatuses, type JobRunStatus } from '../../jobs/contracts';
+import {
+  jobRunStatuses,
+  type Harness,
+  type JobRunStatus,
+} from '../../jobs/contracts';
 
 export const projects = sqliteTable('project', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -21,7 +25,7 @@ export const sessions = sqliteTable(
   'session',
   {
     id: integer('id').primaryKey({ autoIncrement: true }),
-    harness: text('harness').notNull(),
+    harness: text('harness').$type<Harness>().notNull(),
     stableSessionId: text('stable_session_id').notNull(),
     projectId: integer('project_id').references(() => projects.id),
     logFilePath: text('log_file_path').notNull(),
@@ -39,7 +43,7 @@ export const interactions = sqliteTable(
       .notNull()
       .references(() => sessions.id),
     interactionKey: text('interaction_key').notNull(),
-    harness: text('harness').notNull(),
+    harness: text('harness').$type<Harness>().notNull(),
     projectId: integer('project_id')
       .notNull()
       .references(() => projects.id),
@@ -77,7 +81,7 @@ export const interactions = sqliteTable(
 export const checkpoints = sqliteTable(
   'checkpoint',
   {
-    harness: text('harness').notNull(),
+    harness: text('harness').$type<Harness>().notNull(),
     stableSessionId: text('stable_session_id').notNull(),
     lastCompleteRecordByteOffset: integer(
       'last_complete_record_byte_offset',

@@ -1,4 +1,8 @@
 <script lang="ts">
+  import {
+    createActivityHeatmap,
+    intensityLevels,
+  } from '$lib/activity-heatmap';
   import PageIntro from '$lib/components/PageIntro.svelte';
   import type { PageProps } from './$types';
 
@@ -14,26 +18,7 @@
     { index: 0, label: 'Sunday', short: 'Sun' },
   ] as const;
   const hours = Array.from({ length: 24 }, (_, hour) => hour);
-  const counts = $derived(
-    new Map(
-      data.activity.map((cell) => [
-        `${cell.localDow}:${cell.localHour}`,
-        cell.interactionCount,
-      ]),
-    ),
-  );
-  const peak = $derived(
-    Math.max(0, ...data.activity.map((cell) => cell.interactionCount)),
-  );
-
-  function countFor(localDow: number, localHour: number): number {
-    return counts.get(`${localDow}:${localHour}`) ?? 0;
-  }
-
-  function levelFor(interactionCount: number): number {
-    if (interactionCount === 0) return 0;
-    return Math.ceil((interactionCount / peak) * 4);
-  }
+  const heatmap = $derived(createActivityHeatmap(data.activity));
 </script>
 
 <svelte:head>
@@ -94,8 +79,8 @@
             <tr>
               <th scope="row"><span>{day.short}</span><b>{day.label}</b></th>
               {#each hours as hour (hour)}
-                {@const interactionCount = countFor(day.index, hour)}
-                <td data-level={levelFor(interactionCount)}>
+                {@const interactionCount = heatmap.countAt(day.index, hour)}
+                <td data-level={heatmap.levelFor(interactionCount)}>
                   <span
                     title={`${day.label} ${String(hour).padStart(2, '0')}:00 — ${interactionCount} Interactions`}
                     aria-label={`${day.label} at ${String(hour).padStart(2, '0')}:00: ${interactionCount} Interactions`}
@@ -111,7 +96,7 @@
 
     <div class="legend" aria-hidden="true">
       <span>Less</span>
-      {#each [0, 1, 2, 3, 4] as level (level)}
+      {#each intensityLevels as level (level)}
         <i data-level={level}></i>
       {/each}
       <span>More</span>
