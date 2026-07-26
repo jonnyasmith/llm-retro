@@ -1,10 +1,9 @@
 <script lang="ts">
   import PageIntro from '$lib/components/PageIntro.svelte';
-  import { formatTokens } from '$lib/format';
+  import { formatCount, formatTokens } from '$lib/format';
   import type { PageProps } from './$types';
 
   let { data }: PageProps = $props();
-  const number = new Intl.NumberFormat('en-GB');
 </script>
 
 <svelte:head>
@@ -59,9 +58,7 @@
                     <span class="secondary">{project.gitRemoteUrl}</span>
                   {/if}
                 </td>
-                <td class="numeric"
-                  >{number.format(project.interactionCount)}</td
-                >
+                <td class="numeric">{formatCount(project.interactionCount)}</td>
                 <td class="numeric">{formatTokens(project.inputTokens)}</td>
                 <td class="numeric">{formatTokens(project.outputTokens)}</td>
                 <td class="numeric">{formatTokens(project.cacheReadTokens)}</td>

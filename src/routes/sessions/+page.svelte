@@ -1,23 +1,17 @@
 <script lang="ts">
   import PageIntro from '$lib/components/PageIntro.svelte';
-  import { formatDuration } from '$lib/format';
-  import { harnessLabels, type Harness } from '$lib/jobs/contracts';
+  import { formatAverage, formatCount, formatDuration } from '$lib/format';
+  import { harnessLabels } from '$lib/jobs/contracts';
   import type { PageProps } from './$types';
 
   let { data }: PageProps = $props();
-  const number = new Intl.NumberFormat('en-GB');
-  const average = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 1 });
   const totals = $derived(data.sessions.totals);
   const byHarness = $derived(data.sessions.byHarness);
-
-  function harnessLabel(harness: string): string {
-    return harnessLabels[harness as Harness] ?? harness;
-  }
 
   function excludedNote(count: number): string {
     if (count === 0) return '';
     const sessions = count === 1 ? 'Session' : 'Sessions';
-    return `${number.format(count)} ${sessions} excluded (no measurable duration)`;
+    return `${formatCount(count)} ${sessions} excluded (no measurable duration)`;
   }
 </script>
 
@@ -54,13 +48,12 @@
       <div class="metrics">
         <article>
           <span>Sessions</span>
-          <strong>{number.format(totals.sessionCount)}</strong>
+          <strong>{formatCount(totals.sessionCount)}</strong>
           <p>Distinct Sessions captured across every Harness.</p>
         </article>
         <article>
           <span>Avg Interactions / Session</span>
-          <strong>{average.format(totals.averageInteractionsPerSession)}</strong
-          >
+          <strong>{formatAverage(totals.averageInteractionsPerSession)}</strong>
           <p>Whether Sessions are quick pokes or sustained work.</p>
         </article>
         <article>
@@ -91,11 +84,11 @@
           <tbody>
             {#each byHarness as row (row.harness)}
               <tr>
-                <td><span class="label">{harnessLabel(row.harness)}</span></td>
-                <td class="numeric">{number.format(row.sessionCount)}</td>
-                <td class="numeric">{number.format(row.interactionCount)}</td>
+                <td><span class="label">{harnessLabels[row.harness]}</span></td>
+                <td class="numeric">{formatCount(row.sessionCount)}</td>
+                <td class="numeric">{formatCount(row.interactionCount)}</td>
                 <td class="numeric"
-                  >{average.format(row.averageInteractionsPerSession)}</td
+                  >{formatAverage(row.averageInteractionsPerSession)}</td
                 >
                 <td class="numeric">
                   {formatDuration(row.averageDurationMs)}

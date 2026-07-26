@@ -46,7 +46,9 @@ export const POST: RequestHandler = async ({ request }) => {
   await ensureFixture();
   const { correlationId, disposition } = bootstrap.dispatcher.dispatch(
     createStubJob({
-      harness: 'stub',
+      // The Harness only namespaces the demo's Checkpoint; the session id
+      // prefix is what keeps it clear of every ingested Session.
+      harness: 'claude',
       stableSessionId: `browser-demo:${randomUUID()}`,
       filePath: fixturePath,
       recordDelayMs: 120,

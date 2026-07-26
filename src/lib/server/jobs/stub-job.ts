@@ -1,10 +1,11 @@
 import { and, eq } from 'drizzle-orm';
 import { open } from 'node:fs/promises';
+import type { Harness } from '../../jobs/contracts';
 import { checkpoints } from '../database/schema';
 import type { Job, JobContext, JobHandler } from './types';
 
 type StubJobPayload = {
-  harness: string;
+  harness: Harness;
   stableSessionId: string;
   filePath: string;
   recordDelayMs?: number;

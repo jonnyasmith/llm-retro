@@ -1,18 +1,13 @@
 <script lang="ts">
   import PageIntro from '$lib/components/PageIntro.svelte';
-  import { formatTokens } from '$lib/format';
-  import { harnessLabels, type Harness } from '$lib/jobs/contracts';
+  import { formatCount, formatTokens } from '$lib/format';
+  import { harnessLabels } from '$lib/jobs/contracts';
   import type { PageProps } from './$types';
 
   let { data }: PageProps = $props();
-  const number = new Intl.NumberFormat('en-GB');
   const empty = $derived(
     data.harnesses.length === 0 && data.models.length === 0,
   );
-
-  function harnessLabel(harness: string): string {
-    return harnessLabels[harness as Harness] ?? harness;
-  }
 </script>
 
 <svelte:head>
@@ -70,8 +65,8 @@
           <tbody>
             {#each data.harnesses as row (row.harness)}
               <tr>
-                <td><span class="label">{harnessLabel(row.harness)}</span></td>
-                <td class="numeric">{number.format(row.interactionCount)}</td>
+                <td><span class="label">{harnessLabels[row.harness]}</span></td>
+                <td class="numeric">{formatCount(row.interactionCount)}</td>
                 <td class="numeric">{formatTokens(row.inputTokens)}</td>
                 <td class="numeric">{formatTokens(row.outputTokens)}</td>
                 <td class="numeric">{formatTokens(row.cacheReadTokens)}</td>
@@ -112,7 +107,7 @@
               <tr>
                 <td><span class="label">{row.model}</span></td>
                 <td>{row.provider}</td>
-                <td class="numeric">{number.format(row.interactionCount)}</td>
+                <td class="numeric">{formatCount(row.interactionCount)}</td>
                 <td class="numeric">{formatTokens(row.inputTokens)}</td>
                 <td class="numeric">{formatTokens(row.outputTokens)}</td>
                 <td class="numeric">{formatTokens(row.cacheReadTokens)}</td>
