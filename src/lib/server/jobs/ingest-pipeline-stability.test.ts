@@ -63,7 +63,7 @@ describe('Ingest pipeline mid-read stability', () => {
         runPipeline(createFakeAdapter(), fixture.database),
       ).rejects.toThrow(`File changed while it was being read: ${sessionPath}`);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 });

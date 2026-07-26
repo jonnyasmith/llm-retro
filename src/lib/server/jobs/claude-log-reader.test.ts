@@ -179,7 +179,7 @@ describe('Claude log grammar', () => {
         }),
       ]);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -250,7 +250,7 @@ describe('Claude log grammar', () => {
         }),
       ]);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -296,7 +296,7 @@ describe('Claude log grammar', () => {
 
       expect(fixture.database.select().from(interactions).all()).toEqual([]);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 });

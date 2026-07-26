@@ -3,7 +3,7 @@ import type { AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { harnesses } from '../../jobs/contracts';
-import type { Database } from './connection';
+import type { Database, DatabaseTransaction } from './connection';
 import type { JobIdentity } from '../jobs/types';
 import type {
   ApplicationSettings,
@@ -17,18 +17,6 @@ import {
   type LocalBucketDeriver,
 } from './time-buckets';
 import { providerOf } from '../model';
-
-export type {
-  ApplicationSettings,
-  LogSources,
-  SettingsChanges,
-} from '../../settings/contracts';
-
-type NewInteraction = typeof interactions.$inferInsert;
-type StoredInteraction = typeof interactions.$inferSelect;
-type DatabaseTransaction = Parameters<
-  Parameters<Database['transaction']>[0]
->[0];
 
 function resolveOperatingSystemTimezone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -126,33 +114,6 @@ export function persistSettings(
   });
 
   return getSettings(database);
-}
-
-export function insertInteraction(
-  database: Database,
-  interaction: NewInteraction,
-): StoredInteraction {
-  database
-    .insert(interactions)
-    .values(interaction)
-    .onConflictDoNothing({
-      target: [interactions.sessionId, interactions.interactionKey],
-    })
-    .run();
-
-  const stored = database
-    .select()
-    .from(interactions)
-    .where(
-      and(
-        eq(interactions.sessionId, interaction.sessionId),
-        eq(interactions.interactionKey, interaction.interactionKey),
-      ),
-    )
-    .get();
-
-  if (!stored) throw new Error('Interaction insertion did not persist a row');
-  return stored;
 }
 
 export function listJobRuns(
@@ -375,16 +336,6 @@ export function getSessionShape(database: Database) {
     },
     byHarness,
   };
-}
-
-export function recomputeLocalBuckets(
-  database: Database,
-  timezone: string,
-): number {
-  const deriver = createLocalBucketDeriver(timezone);
-  return database.transaction((transaction) =>
-    recomputeWithTransaction(transaction, deriver),
-  );
 }
 
 function recomputeWithTransaction(

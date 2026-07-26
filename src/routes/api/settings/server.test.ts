@@ -2,7 +2,7 @@ import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Database } from '$lib/server/database/connection';
+import type { Connection, Database } from '$lib/server/database/connection';
 import { openDatabase } from '$lib/server/database/connection';
 import {
   resolveDefaultLogSources,
@@ -31,7 +31,7 @@ vi.mock('$lib/server/bootstrap', () => ({
 import { POST } from './+server';
 
 const temporaryDirectories: string[] = [];
-let connection: ReturnType<typeof openDatabase>;
+let connection: Connection;
 
 function request(body: unknown): Request {
   return new Request('http://localhost/api/settings', {
@@ -57,7 +57,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  connection.sqlite.close();
+  connection.close();
   await Promise.all(
     temporaryDirectories
       .splice(0)

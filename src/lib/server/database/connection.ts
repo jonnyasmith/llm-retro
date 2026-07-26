@@ -1,12 +1,47 @@
-import Sqlite from 'better-sqlite3';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
+import Sqlite, {
+  type Database as SqliteDriver,
+  type RunResult,
+} from 'better-sqlite3';
+import type { ExtractTablesWithRelations } from 'drizzle-orm';
+import {
+  drizzle,
+  type BetterSQLite3Database,
+} from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import type { SQLiteTransaction } from 'drizzle-orm/sqlite-core';
 import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import * as schema from './schema';
 
 const DATA_DIRECTORY_ENVIRONMENT_VARIABLE = 'LLM_RETRO_DATA_DIR';
+
+/** The queryable Store. */
+export type Database = BetterSQLite3Database<typeof schema>;
+
+/** One transaction over the Store, as handed to a transaction body. */
+export type DatabaseTransaction = SQLiteTransaction<
+  'sync',
+  RunResult,
+  typeof schema,
+  ExtractTablesWithRelations<typeof schema>
+>;
+
+/** How the rest of the application reaches the Store (ADR-0013). */
+export interface Connection {
+  readonly database: Database;
+  readonly databasePath: string;
+  /**
+   * The raw driver, for the callers that must issue SQL the Store does not
+   * model — a pragma, a schema probe, a trigger. Any other reach for it is a
+   * duty missing from this interface (ADR-0013).
+   */
+  readonly unsafeSqlite: SqliteDriver;
+  /** No production caller, by design (ADR-0013). */
+  close(): void;
+  /** Throws unless a query still reaches the Store. */
+  assertConnected(): void;
+}
 
 export function resolveDataDirectory(
   environment: NodeJS.ProcessEnv = process.env,
@@ -32,7 +67,9 @@ export function resolveDataDirectory(
   );
 }
 
-export function openDatabase(environment: NodeJS.ProcessEnv = process.env) {
+export function openDatabase(
+  environment: NodeJS.ProcessEnv = process.env,
+): Connection {
   const dataDirectory = resolveDataDirectory(environment);
   mkdirSync(dataDirectory, { recursive: true });
 
@@ -49,7 +86,13 @@ export function openDatabase(environment: NodeJS.ProcessEnv = process.env) {
   }
   sqlite.pragma('foreign_keys = ON');
 
-  return { database, databasePath, sqlite };
+  return {
+    database,
+    databasePath,
+    unsafeSqlite: sqlite,
+    close: () => sqlite.close(),
+    assertConnected: () => {
+      sqlite.prepare('select 1').get();
+    },
+  };
 }
-
-export type Database = ReturnType<typeof openDatabase>['database'];

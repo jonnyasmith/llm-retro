@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { openDatabase } from './connection';
+import { openDatabase, type Database } from './connection';
 import { interactions, jobRuns, projects, sessions, settings } from './schema';
 import {
   getActivityHeatmap,
@@ -12,7 +12,6 @@ import {
   getProjectBreakdown,
   getSessionShape,
   getSettings,
-  insertInteraction,
   listJobRuns,
   resolveDefaultLogSources,
   persistSettings,
@@ -26,9 +25,7 @@ async function createDatabase() {
   return openDatabase({ LLM_RETRO_DATA_DIR: dataDirectory });
 }
 
-async function createSessionFixture(
-  database: ReturnType<typeof openDatabase>['database'],
-) {
+async function createSessionFixture(database: Database) {
   const [project] = database
     .insert(projects)
     .values({ rootPath: '/work/llm-retro', gitRemoteUrl: 'git@example/repo' })
@@ -48,6 +45,19 @@ async function createSessionFixture(
   return { project, session };
 }
 
+function seedInteraction(
+  database: Database,
+  interaction: typeof interactions.$inferInsert,
+) {
+  const [stored] = database
+    .insert(interactions)
+    .values(interaction)
+    .returning()
+    .all();
+
+  return stored;
+}
+
 afterEach(async () => {
   await Promise.all(
     temporaryDirectories
@@ -57,38 +67,6 @@ afterEach(async () => {
 });
 
 describe('analytical store', () => {
-  it('collapses a repeated Interaction identity through the public insertion seam', async () => {
-    const connection = await createDatabase();
-
-    try {
-      const { project, session } = await createSessionFixture(
-        connection.database,
-      );
-      const interaction = {
-        sessionId: session.id,
-        interactionKey: 'record-1',
-        harness: 'codex',
-        projectId: project.id,
-        model: 'gpt-5.1-codex-max',
-        modelRaw: 'gpt-5.1-codex-max-2025-11-19',
-        timestamp: Date.parse('2025-11-02T05:30:00.000Z'),
-        localDow: 0,
-        localHour: 1,
-        localDate: '2025-11-02',
-      } as const;
-
-      const first = insertInteraction(connection.database, interaction);
-      const duplicate = insertInteraction(connection.database, interaction);
-
-      expect(duplicate).toEqual(first);
-      expect(
-        connection.database.select().from(interactions).all(),
-      ).toHaveLength(1);
-    } finally {
-      connection.sqlite.close();
-    }
-  });
-
   it('round-trips absent token buckets distinctly from genuine zero', async () => {
     const connection = await createDatabase();
 
@@ -96,7 +74,7 @@ describe('analytical store', () => {
       const { project, session } = await createSessionFixture(
         connection.database,
       );
-      const stored = insertInteraction(connection.database, {
+      const stored = seedInteraction(connection.database, {
         sessionId: session.id,
         interactionKey: 'record-1',
         harness: 'codex',
@@ -115,7 +93,7 @@ describe('analytical store', () => {
       expect(stored.mainOutputTokens).toBeNull();
       expect(stored.subInputTokens).toBeNull();
     } finally {
-      connection.sqlite.close();
+      connection.close();
     }
   });
 
@@ -171,7 +149,7 @@ describe('analytical store', () => {
         },
       ] as const;
       for (const [index, fact] of facts.entries()) {
-        insertInteraction(connection.database, {
+        seedInteraction(connection.database, {
           sessionId: session.id,
           harness: 'codex',
           projectId: project.id,
@@ -191,7 +169,7 @@ describe('analytical store', () => {
         { localDow: 6, localHour: 23, interactionCount: 1 },
       ]);
     } finally {
-      connection.sqlite.close();
+      connection.close();
     }
   });
 
@@ -205,7 +183,7 @@ describe('analytical store', () => {
       });
       expect(getActivityHeatmap(connection.database)).toEqual([]);
     } finally {
-      connection.sqlite.close();
+      connection.close();
     }
   });
 
@@ -270,7 +248,7 @@ describe('analytical store', () => {
         }),
       ]);
     } finally {
-      connection.sqlite.close();
+      connection.close();
     }
   });
 
@@ -314,7 +292,7 @@ describe('analytical store', () => {
         rawArchivePath: null,
       });
     } finally {
-      connection.sqlite.close();
+      connection.close();
     }
   });
 
@@ -331,7 +309,7 @@ describe('analytical store', () => {
         claude: ['/external/claude'],
       });
     } finally {
-      connection.sqlite.close();
+      connection.close();
     }
   });
 
@@ -343,7 +321,7 @@ describe('analytical store', () => {
       const { project, session } = await createSessionFixture(
         connection.database,
       );
-      insertInteraction(connection.database, {
+      seedInteraction(connection.database, {
         sessionId: session.id,
         interactionKey: 'record-1',
         harness: 'codex',
@@ -355,7 +333,7 @@ describe('analytical store', () => {
         localHour: 20,
         localDate: '2025-01-01',
       });
-      connection.sqlite.exec(`
+      connection.unsafeSqlite.exec(`
         create trigger reject_timezone_update
         before update on settings
         begin
@@ -375,7 +353,7 @@ describe('analytical store', () => {
         localDate: '2025-01-01',
       });
     } finally {
-      connection.sqlite.close();
+      connection.close();
     }
   });
 
@@ -386,7 +364,7 @@ describe('analytical store', () => {
       const { project, session } = await createSessionFixture(
         connection.database,
       );
-      insertInteraction(connection.database, {
+      seedInteraction(connection.database, {
         sessionId: session.id,
         interactionKey: 'record-1',
         harness: 'codex',
@@ -409,7 +387,7 @@ describe('analytical store', () => {
         localDate: '2025-01-02',
       });
     } finally {
-      connection.sqlite.close();
+      connection.close();
     }
   });
 });
@@ -432,7 +410,7 @@ describe('categorical breakdowns', () => {
         localHour: 0,
         localDate: '1970-01-01',
       } as const;
-      insertInteraction(connection.database, {
+      seedInteraction(connection.database, {
         ...base,
         interactionKey: 'record-1',
         timestamp: 0,
@@ -441,7 +419,7 @@ describe('categorical breakdowns', () => {
         mainCacheWriteTokens: null,
         subCacheWriteTokens: null,
       });
-      insertInteraction(connection.database, {
+      seedInteraction(connection.database, {
         ...base,
         interactionKey: 'record-2',
         timestamp: 1,
@@ -461,7 +439,7 @@ describe('categorical breakdowns', () => {
         totalTokens: 15,
       });
     } finally {
-      connection.sqlite.close();
+      connection.close();
     }
   });
 
@@ -491,7 +469,7 @@ describe('categorical breakdowns', () => {
         .returning()
         .all();
 
-      insertInteraction(connection.database, {
+      seedInteraction(connection.database, {
         sessionId: claudeSession.id,
         interactionKey: 'claude-record',
         harness: 'claude',
@@ -504,7 +482,7 @@ describe('categorical breakdowns', () => {
         localHour: 0,
         localDate: '1970-01-01',
       });
-      insertInteraction(connection.database, {
+      seedInteraction(connection.database, {
         sessionId: piSession.id,
         interactionKey: 'pi-record',
         harness: 'pi',
@@ -527,7 +505,7 @@ describe('categorical breakdowns', () => {
         }),
       ]);
     } finally {
-      connection.sqlite.close();
+      connection.close();
     }
   });
 
@@ -544,7 +522,7 @@ describe('categorical breakdowns', () => {
         .returning()
         .all();
 
-      insertInteraction(connection.database, {
+      seedInteraction(connection.database, {
         sessionId: session.id,
         interactionKey: 'alpha-record',
         harness: 'codex',
@@ -556,7 +534,7 @@ describe('categorical breakdowns', () => {
         localHour: 0,
         localDate: '1970-01-01',
       });
-      insertInteraction(connection.database, {
+      seedInteraction(connection.database, {
         sessionId: session.id,
         interactionKey: 'beta-record',
         harness: 'codex',
@@ -579,7 +557,7 @@ describe('categorical breakdowns', () => {
         { rootPath: '/work/llm-retro', interactionCount: 1 },
       ]);
     } finally {
-      connection.sqlite.close();
+      connection.close();
     }
   });
 
@@ -645,7 +623,7 @@ describe('categorical breakdowns', () => {
         }),
       ]);
     } finally {
-      connection.sqlite.close();
+      connection.close();
     }
   });
 
@@ -657,7 +635,7 @@ describe('categorical breakdowns', () => {
         connection.database,
       );
       for (const key of ['a', 'b', 'c']) {
-        insertInteraction(connection.database, {
+        seedInteraction(connection.database, {
           sessionId: session.id,
           interactionKey: key,
           harness: 'codex',
@@ -678,7 +656,7 @@ describe('categorical breakdowns', () => {
         averageInteractionsPerSession: 3,
       });
     } finally {
-      connection.sqlite.close();
+      connection.close();
     }
   });
 });

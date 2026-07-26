@@ -107,7 +107,7 @@ describe('Job run stream contract', () => {
         },
       ]);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -137,7 +137,7 @@ describe('Job run stream contract', () => {
         },
       ]);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -176,7 +176,7 @@ describe('Job run stream contract', () => {
         error: null,
       });
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -220,7 +220,7 @@ describe('Job run stream contract', () => {
       });
       expect(fixture.listenerErrors).not.toHaveBeenCalled();
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -287,7 +287,7 @@ describe('Job run stream contract', () => {
         }),
       ]);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -347,7 +347,7 @@ describe('Job run stream contract', () => {
         error: null,
       });
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -357,7 +357,7 @@ describe('Job run stream contract', () => {
     try {
       expect(fixture.stream.open(randomUUID())).toBeUndefined();
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 });

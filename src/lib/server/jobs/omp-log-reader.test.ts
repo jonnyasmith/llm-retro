@@ -233,7 +233,7 @@ describe('omp log grammar', () => {
         }),
       ]);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 });

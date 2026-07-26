@@ -72,7 +72,7 @@ describe('Ingest pipeline', () => {
         filesDone: 2,
       });
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -106,7 +106,7 @@ describe('Ingest pipeline', () => {
           .all(),
       ).toEqual([{ key: 'p-1' }, { key: 'p-2' }]);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -162,7 +162,7 @@ describe('Ingest pipeline', () => {
         fileSize: grown.size,
       });
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -220,7 +220,7 @@ describe('Ingest pipeline', () => {
           .all(),
       ).toEqual(afterFirstRun);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -260,7 +260,7 @@ describe('Ingest pipeline', () => {
         { interactionKey: 'n-2', model: 'fake-model' },
       ]);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -308,7 +308,7 @@ describe('Ingest pipeline', () => {
         { stableSessionId: 'refined' },
       ]);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -338,7 +338,7 @@ describe('Ingest pipeline', () => {
         { interactionKey: 'fresh' },
       ]);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -368,7 +368,7 @@ describe('Ingest pipeline', () => {
         readFile(rawArchiveDestination(archiveRoot, FAKE_HARNESS, sessionPath)),
       ).resolves.toEqual(Buffer.from('not valid json\n'));
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -398,7 +398,7 @@ describe('Ingest pipeline', () => {
         { interactionKey: 'd-1', mainOutputTokens: 5 },
       ]);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -415,7 +415,7 @@ describe('Ingest pipeline', () => {
       const session = fixture.database.select().from(sessions).get();
       expect(session?.projectId).toBe(project?.id);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -440,7 +440,7 @@ describe('Ingest pipeline', () => {
         .all();
       expect(stored[0].projectId).not.toBe(stored[1].projectId);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -460,7 +460,7 @@ describe('Ingest pipeline', () => {
         subOutputTokens: null,
       });
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -501,7 +501,7 @@ describe('Ingest pipeline', () => {
         { interactionKey: 'main-1', subInputTokens: 4, subOutputTokens: 5 },
       ]);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -538,7 +538,7 @@ describe('Ingest pipeline', () => {
         new Set([storedProjects[0].id]),
       );
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 });

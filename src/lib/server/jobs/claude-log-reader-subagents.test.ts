@@ -344,7 +344,7 @@ describe('Claude sub-agent folding', () => {
           .all(),
       ).toEqual(stored);
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 
@@ -493,7 +493,7 @@ describe('Claude sub-agent folding', () => {
         subCacheWriteTokens: null,
       });
     } finally {
-      fixture.sqlite.close();
+      fixture.close();
     }
   });
 });
