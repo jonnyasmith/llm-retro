@@ -256,21 +256,23 @@ describe('settings endpoint', () => {
     } as Parameters<typeof POST>[0]);
     expect(invalidTimezoneResponse.status).toBe(400);
 
-    const rejectedArchiveRoot = join(
+    const strayArchiveRoot = join(
       temporaryDirectories[temporaryDirectories.length - 1],
-      'rejected-archive',
+      'stray-archive',
     );
     const combinedResponse = await POST({
       request: request({
         timezone: 'America/New_York',
         rawArchiveEnabled: true,
-        rawArchivePath: rejectedArchiveRoot,
+        rawArchivePath: strayArchiveRoot,
       }),
     } as Parameters<typeof POST>[0]);
     expect(combinedResponse.status).toBe(409);
-    await expect(stat(rejectedArchiveRoot)).rejects.toMatchObject({
-      code: 'ENOENT',
+    expect(connection.database.select().from(settings).get()).toMatchObject({
+      rawArchiveEnabled: false,
+      rawArchivePath: null,
     });
+    expect((await stat(strayArchiveRoot)).isDirectory()).toBe(true);
 
     const timezoneResponse = await POST({
       request: request({ timezone: 'America/New_York' }),

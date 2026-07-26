@@ -7,7 +7,10 @@ import {
   sessions,
 } from '../database/schema';
 import { getSettings } from '../database/store';
-import { deriveLocalBuckets } from '../database/time-buckets';
+import {
+  createLocalBucketDeriver,
+  type LocalBucketDeriver,
+} from '../database/time-buckets';
 import {
   resolveGitProject,
   type CwdProjectResolver,
@@ -109,6 +112,7 @@ export function createIngestHandler<Metadata>(
     async run(_payload, context) {
       const settings = getSettings(context.database);
       const archive = createRawArchive(adapter.harness, settings);
+      const deriver = createLocalBucketDeriver(settings.timezone);
       const sourceFileGroups = await adapter.enumerateSourceFileGroups(
         settings.logSources[adapter.harness],
       );
@@ -230,7 +234,7 @@ export function createIngestHandler<Metadata>(
           session,
           interactionUpdates,
           resolvedProjects,
-          settings.timezone,
+          deriver,
           existingSession,
           resumingPrimary,
           {
@@ -264,7 +268,7 @@ function storeSessionSlice<Metadata>(
   session: NormalisedSession | null,
   interactionUpdates: InteractionUpdate[],
   resolvedProjects: Map<string, ResolvedProject>,
-  timezone: string,
+  deriver: LocalBucketDeriver,
   existingSession: typeof sessions.$inferSelect | undefined,
   resumingPrimary: boolean,
   checkpoint: {
@@ -383,7 +387,7 @@ function storeSessionSlice<Metadata>(
         subCacheWriteTokens: interaction.subTokens.cacheWrite,
         spawnedSubagents: interaction.spawnedSubagents,
         timestamp: interaction.timestamp,
-        ...deriveLocalBuckets(interaction.timestamp, timezone),
+        ...deriver.derive(interaction.timestamp),
       };
       transaction
         .insert(interactions)

@@ -12,7 +12,10 @@ import type {
 } from '../../settings/contracts';
 import { IngestionActiveError } from '../settings/errors';
 import { interactions, jobRuns, projects, sessions, settings } from './schema';
-import { deriveLocalBuckets } from './time-buckets';
+import {
+  createLocalBucketDeriver,
+  type LocalBucketDeriver,
+} from './time-buckets';
 import { providerOf } from '../model';
 
 export type {
@@ -63,10 +66,19 @@ export function getSettings(
   };
 }
 
+/**
+ * Writes Settings values, rebuilding every Interaction's local buckets in the
+ * same transaction when the timezone moves.
+ *
+ * A primitive as far as Settings policy goes: whether the values are allowed is
+ * the settings module's job. Two things here are not policy — a timezone no
+ * bucket deriver can be built for, which would leave the Store unable to bucket
+ * its own rows, and ADR-0011's concurrency rule, which is an invariant of this
+ * write rather than something a caller selects.
+ */
 export function persistSettings(
   database: Database,
   changes: SettingsChanges,
-  options: { rejectTimezoneChangeDuringIngestion?: boolean } = {},
 ): ApplicationSettings {
   const stored = database.select().from(settings).get();
   const current = getSettings(database);
@@ -89,23 +101,21 @@ export function persistSettings(
         : changes.rawArchivePath,
     logSourceOverrides,
   };
-  deriveLocalBuckets(0, values.timezone);
+  const deriver = createLocalBucketDeriver(values.timezone);
 
   database.transaction((transaction) => {
     if (current.timezone !== values.timezone) {
-      if (options.rejectTimezoneChangeDuringIngestion) {
-        const activeIngestion = transaction
-          .select({ id: jobRuns.id })
-          .from(jobRuns)
-          .where(and(eq(jobRuns.type, 'ingest'), eq(jobRuns.status, 'running')))
-          .get();
-        if (activeIngestion) {
-          throw new IngestionActiveError(
-            'An Ingestion run is running; retry when it has finished',
-          );
-        }
+      const activeIngestion = transaction
+        .select({ id: jobRuns.id })
+        .from(jobRuns)
+        .where(and(eq(jobRuns.type, 'ingest'), eq(jobRuns.status, 'running')))
+        .get();
+      if (activeIngestion) {
+        throw new IngestionActiveError(
+          'Ingestion is running; retry when it has finished',
+        );
       }
-      recomputeWithTransaction(transaction, values.timezone);
+      recomputeWithTransaction(transaction, deriver);
     }
 
     transaction
@@ -158,16 +168,6 @@ export function listJobRuns(
     .orderBy(desc(jobRuns.id))
     .limit(limit)
     .all();
-}
-
-export function hasActiveIngestRun(database: Database): boolean {
-  return (
-    database
-      .select({ id: jobRuns.id })
-      .from(jobRuns)
-      .where(and(eq(jobRuns.type, 'ingest'), eq(jobRuns.status, 'running')))
-      .get() !== undefined
-  );
 }
 
 type TokenColumn = AnySQLiteColumn;
@@ -381,15 +381,15 @@ export function recomputeLocalBuckets(
   database: Database,
   timezone: string,
 ): number {
-  deriveLocalBuckets(0, timezone);
+  const deriver = createLocalBucketDeriver(timezone);
   return database.transaction((transaction) =>
-    recomputeWithTransaction(transaction, timezone),
+    recomputeWithTransaction(transaction, deriver),
   );
 }
 
 function recomputeWithTransaction(
   transaction: DatabaseTransaction,
-  timezone: string,
+  deriver: LocalBucketDeriver,
 ): number {
   const storedInteractions = transaction
     .select({ id: interactions.id, timestamp: interactions.timestamp })
@@ -399,7 +399,7 @@ function recomputeWithTransaction(
   for (const interaction of storedInteractions) {
     transaction
       .update(interactions)
-      .set(deriveLocalBuckets(interaction.timestamp, timezone))
+      .set(deriver.derive(interaction.timestamp))
       .where(eq(interactions.id, interaction.id))
       .run();
   }
