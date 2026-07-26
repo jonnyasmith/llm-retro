@@ -17,11 +17,11 @@ One user prompt together with all model and tool activity it triggers, up to the
 _Avoid_: Turn, message, request, exchange, prompt.
 
 **Model**:
-The specific LLM that served an Interaction, canonicalised to one identity (e.g. `claude-opus-4-8`, `gpt-5.1-codex-max`) so the same model aggregates across Harnesses, with the verbatim string the Harness reported retained alongside as provenance. The "which models I reach for" dimension. Its provider (anthropic, openai, …) is a derived attribute, not the identity.
+The specific LLM that served an Interaction, canonicalised to one identity (e.g. `claude-opus-4-8`, `gpt-5.1-codex-max`) so the same model aggregates across Harnesses, with the verbatim string the Harness reported retained alongside as provenance. Where several models responded within one Interaction, the Model that served it is the one with the most output tokens once every variant spelling has been reduced to its canonical identity — so two spellings of one Model are one candidate, never rivals — and its provenance is the highest-output spelling of that winner, ties going to the first the Harness recorded. The "which models I reach for" dimension. Its provider (anthropic, openai, …) is a derived attribute, not the identity.
 _Avoid_: LLM, engine, model family.
 
 **Token usage**:
-An Interaction's consumption expressed in four canonical buckets — `input`, `output`, `cache_read`, `cache_write` — normalised from whatever each Harness reports. A bucket a Harness does not report is null (absent), never zero; zero means genuinely zero.
+An Interaction's consumption expressed in four canonical buckets — input, output, cache read, and cache write — normalised from whatever each Harness reports. A bucket a Harness does not report is null (absent), never zero; zero means genuinely zero.
 _Avoid_: Cost, spend, credits, premium requests.
 
 **Project**:
