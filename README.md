@@ -59,4 +59,6 @@ The suite runs in two projects from the one `pnpm test` command: server tests un
 - `docs/adr/` — the decisions behind every non-obvious behaviour in the system. Read here before re-deciding something.
 - `docs/agents/domain.md` — the domain glossary; the vocabulary the code and the docs both use.
 - `docs/agents/harness-log-formats.md` — where each Harness writes its logs and which fields carry what.
+- `docs/agents/verification.md` — the commands that gate a change, and the traps in them.
+- `docs/agents/code-comments.md` — what belongs in a code comment, and where everything else goes.
 - `AGENTS.md` — the instructions an agent working in this repository operates under.
