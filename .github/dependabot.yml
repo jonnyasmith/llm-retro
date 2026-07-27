@@ -1,0 +1,33 @@
+# Actions only, by decision — see docs/adr/0016-dependabot-moves-the-actions-not-the-packages.md.
+#
+# The npm ecosystem's absence here is deliberate, not an oversight: this repo is
+# pnpm 11 (see packageManager in package.json) and Dependabot supports pnpm up
+# to v10. Enabling it would produce a scheduled job that intermittently opens
+# zero PRs without saying why, which is worse than no job at all.
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    # One PR for the lot. Four first-party actions release rarely, so most weeks
+    # produce nothing; when they do, one grouped PR is one verify run and one
+    # review. Majors ride along on purpose — an action major is a runner or
+    # runtime bump, not a migration, and a broken one fails verify on the PR.
+    groups:
+      actions:
+        patterns:
+          - '*'
+    commit-message:
+      prefix: chore
+
+  # Uncomment when dependabot/dependabot-core#14794 closes. Tracked by the
+  # follow-up issue linked from the ADR; nothing else about this file changes.
+  #
+  # - package-ecosystem: npm
+  #   directory: /
+  #   schedule:
+  #     interval: weekly
+  #   commit-message:
+  #     prefix: chore

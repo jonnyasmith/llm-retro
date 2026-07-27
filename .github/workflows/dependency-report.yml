@@ -1,0 +1,96 @@
+name: dependency report
+
+# What Dependabot would have told us about the packages, if it could read a
+# pnpm 11 lockfile. It cannot (docs/adr/0016-dependabot-moves-the-actions-not-the-packages.md),
+# so this replaces the version-update half: a monthly currency check that keeps
+# one issue current instead of opening a queue nobody reads.
+#
+# Security is not this job's business — Dependabot alerts cover advisories from
+# the same database `pnpm audit` reads, and a second channel saying the same
+# thing teaches you to ignore both.
+#
+# It reports; it never gates. The gate is verify, on pull requests.
+on:
+  schedule:
+    - cron: '0 6 1 * *'
+  workflow_dispatch:
+
+concurrency:
+  group: dependency-report
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      # SHA-pinned for the reason given in verify.yml; this job holds a token
+      # that can write issues.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Exit 1 means "something is behind", which is the normal case and not a
+      # failure. Only an unreadable manifest should stop this job, and that
+      # surfaces as empty JSON below rather than a red run.
+      - id: outdated
+        run: |
+          pnpm outdated --format json >outdated.json || true
+          [ -s outdated.json ] || echo '{}' >outdated.json
+          echo "count=$(jq 'length' outdated.json)" >>"$GITHUB_OUTPUT"
+
+      - id: body
+        run: |
+          {
+            echo '`pnpm outdated` for the exact-pinned set, run monthly by'
+            echo '`.github/workflows/dependency-report.yml`. Dependabot does not'
+            echo 'move these packages — see `docs/adr/0016-dependabot-moves-the-actions-not-the-packages.md`.'
+            echo 'Informational: nothing here gates a merge.'
+            echo
+            if [ "${{ steps.outdated.outputs.count }}" -eq 0 ]; then
+              echo 'Everything is current.'
+            else
+              echo '| Package | Pinned | Latest | Kind |'
+              echo '| --- | --- | --- | --- |'
+              jq -r 'to_entries[] | "| `\(.key)`\(if .value.isDeprecated then " **(deprecated)**" else "" end) | \(.value.current) | \(.value.latest) | \(if .value.dependencyType == "devDependencies" then "dev" else "runtime" end) |"' outdated.json
+            fi
+            echo
+            echo "_Last run: $(date -u '+%Y-%m-%d') against \`${GITHUB_SHA:0:7}\`._"
+          } >body.md
+          cat body.md
+
+      # One durable issue, found by label: rewritten in place every run, reopened
+      # when the tree drifts, closed when it catches up. A fresh issue per month
+      # would just train us to close it on sight.
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          DRIFT: ${{ steps.outdated.outputs.count }}
+        run: |
+          # Empty when the issue has never been created; jq emits nothing for an
+          # empty array, so `read` leaves both variables unset.
+          read -r number state <<<"$(gh issue list --label dependency-report --state all --limit 1 \
+            --json number,state --jq '.[] | "\(.number) \(.state)"')"
+
+          if [ -z "$number" ]; then
+            if [ "$DRIFT" -gt 0 ]; then
+              gh issue create --title 'Dependency currency report' \
+                --label dependency-report --body-file body.md
+            fi
+            exit 0
+          fi
+
+          gh issue edit "$number" --body-file body.md
+          if [ "$DRIFT" -gt 0 ]; then
+            [ "$state" = OPEN ] || gh issue reopen "$number"
+          else
+            [ "$state" = OPEN ] && gh issue close "$number" --reason completed
+          fi
+          exit 0
