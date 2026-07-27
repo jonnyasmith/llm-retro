@@ -58,10 +58,12 @@ describe('Ingest trigger route', () => {
     });
   });
 
-  it('rejects an unrecognised Harness with a 404', () => {
+  it('rejects an unrecognised Harness with a 404', async () => {
     let thrown: unknown;
     try {
-      trigger('gemini');
+      // Awaited, not called bare: the handler's declared return type permits a
+      // Promise, so a rejection would otherwise escape this catch entirely.
+      await trigger('gemini');
     } catch (cause) {
       thrown = cause;
     }
