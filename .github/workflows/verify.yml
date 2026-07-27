@@ -1,0 +1,48 @@
+name: verify
+
+# Pull requests only: main is protected, so every change arrives here first and
+# nothing lands without this job having run on it.
+on: pull_request
+
+concurrency:
+  group: verify-${{ github.head_ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # pnpm before setup-node: the Node cache resolves the pnpm store, which
+      # needs pnpm on PATH. Version comes from packageManager in package.json.
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The client test project renders components in real Chromium, which is a
+      # ~170MB download the dependency install does not perform. Cache it on the
+      # Playwright version that pins the browser build.
+      - id: playwright-version
+        run: echo "value=$(node -p "require('playwright/package.json').version")" >>"$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.value }}
+      # Idempotent: the download is skipped when the cache restored it, but the
+      # system libraries Chromium links against are not cached and are not all
+      # present on the runner image.
+      - run: pnpm exec playwright install --with-deps chromium
+
+      # The full gate, in the order docs/agents/verification.md defines it.
+      - run: pnpm test
+      - run: pnpm check
+      - run: pnpm lint
+      - run: pnpm build

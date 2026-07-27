@@ -48,6 +48,11 @@ describe('Raw archive', () => {
       HARNESS,
       sessionPath,
     );
+    // Stat before reading: the copy's preserved atime predates its own ctime,
+    // so the first read of it is exactly the case relatime updates atime for.
+    const archived = await stat(destination);
+    expect(archived.mtime).toEqual(stamp);
+    expect(archived.atime).toEqual(read.atime);
     await expect(readFile(destination)).resolves.toEqual(
       Buffer.from('first\n'),
     );
@@ -59,9 +64,6 @@ describe('Raw archive', () => {
         relative(parse(absoluteSource).root, absoluteSource),
       ),
     ).toBe(true);
-    const archived = await stat(destination);
-    expect(archived.mtime).toEqual(stamp);
-    expect(archived.atime).toEqual(read.atime);
   });
 
   it('skips a copy that still matches and replaces one whose source has grown', async () => {

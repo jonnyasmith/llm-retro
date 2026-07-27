@@ -2,16 +2,19 @@
 
 Run the narrowest command that covers the change while you work, then the full gate before handing back.
 
-| Command                                | Covers                                            |
-| -------------------------------------- | ------------------------------------------------- |
-| `pnpm test --project server`           | Server tests only (Node) — fastest useful signal  |
-| `pnpm test --project client`           | Client tests only (real Chromium, headless)       |
-| `pnpm test <path-fragment>`            | One file or directory across both projects        |
-| `pnpm check`                           | TypeScript and Svelte types                       |
-| `pnpm lint`                            | Prettier check plus ESLint (`pnpm format` to fix) |
-| `pnpm test && pnpm check && pnpm lint` | The full gate                                     |
+| Command                                              | Covers                                            |
+| ---------------------------------------------------- | ------------------------------------------------- |
+| `pnpm test --project server`                         | Server tests only (Node) — fastest useful signal  |
+| `pnpm test --project client`                         | Client tests only (real Chromium, headless)       |
+| `pnpm test <path-fragment>`                          | One file or directory across both projects        |
+| `pnpm check`                                         | TypeScript and Svelte types                       |
+| `pnpm lint`                                          | Prettier check plus ESLint (`pnpm format` to fix) |
+| `pnpm build`                                         | SSR bundling and the Node adapter                 |
+| `pnpm test && pnpm check && pnpm lint && pnpm build` | The full gate                                     |
 
 `pnpm test` runs two projects: `server` under Node, and `client` rendering components in headless Chromium. Naming one with `--project` is the difference between a second and the whole suite.
+
+`.github/workflows/verify.yml` runs the full gate, those four commands in that order, on every pull request, and a red run blocks the merge. It is the same gate, not a superset: what passes locally passes there.
 
 ## Traps
 
