@@ -2,7 +2,7 @@
 
 Every other Interaction attribute — Model, token buckets, Project — is resolved during Ingestion and stored on the row. Provider is the deliberate exception: it is derived at read time by a pure `providerOf(canonicalModel)` prefix mapping (e.g. `claude-*` → anthropic, `gpt-*`/`o*` → openai), living beside the shared model-canonicalisation helper, with an unknown prefix falling back to `unknown`. Nothing writes a `provider` column.
 
-The domain already treats Provider as "a derived attribute of Model, not its identity"; this records *where* and *when* that derivation happens.
+The domain already treats Provider as "a derived attribute of Model, not its identity"; this records _where_ and _when_ that derivation happens.
 
 ## Considered Options
 

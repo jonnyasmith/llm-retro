@@ -30,7 +30,7 @@ looks covered. We would rather have a hole we can see.
 
 ## What replaces the missing half
 
-Dependabot's value here was named in #69 as *staying current cheaply*, with
+Dependabot's value here was named in #69 as _staying current cheaply_, with
 security alerts secondary. The two are separated because only one of them
 depends on the broken updater.
 

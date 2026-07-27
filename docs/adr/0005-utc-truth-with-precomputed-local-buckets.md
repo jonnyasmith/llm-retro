@@ -4,7 +4,7 @@ The headline activity view is a heatmap of **local** day-of-week × hour, in the
 
 ## Considered options
 
-- **Group by UTC buckets, translate in the UI.** Rejected as *incorrect*, not merely slower. Aggregating into UTC hour/day buckets discards the date — and the date is exactly what a correct local bin needs. DST means the UTC→local offset varies across the year, so one UTC bucket holds interactions belonging to different local hours *and* different local days; and fractional-offset zones (UTC+5:30, +5:45) don't map bucket-to-bucket at all. No post-hoc shift can reconstruct the right bins.
+- **Group by UTC buckets, translate in the UI.** Rejected as _incorrect_, not merely slower. Aggregating into UTC hour/day buckets discards the date — and the date is exactly what a correct local bin needs. DST means the UTC→local offset varies across the year, so one UTC bucket holds interactions belonging to different local hours _and_ different local days; and fractional-offset zones (UTC+5:30, +5:45) don't map bucket-to-bucket at all. No post-hoc shift can reconstruct the right bins.
 - **Convert per-row in application code at query time.** Correct (each row still carries its full timestamp), but SQLite cannot do arbitrary-timezone conversion in SQL, so every heatmap load would pull rows into JS and aggregate there.
 
 ## Consequences

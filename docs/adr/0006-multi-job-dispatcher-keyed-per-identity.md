@@ -4,7 +4,7 @@ Background work runs through a **dispatcher that runs multiple Jobs concurrently
 
 ## Considered options
 
-- **A single global job lock (one Job at a time).** Rejected. The real hazard was never "two Jobs at once" — it was two runs of the *same* scope racing the *same* files. A global lock also needlessly serialises unrelated work (per-Harness ingests; future CPU-bound analysis) that has every reason to run in parallel.
+- **A single global job lock (one Job at a time).** Rejected. The real hazard was never "two Jobs at once" — it was two runs of the _same_ scope racing the _same_ files. A global lock also needlessly serialises unrelated work (per-Harness ingests; future CPU-bound analysis) that has every reason to run in parallel.
 
 ## Consequences
 

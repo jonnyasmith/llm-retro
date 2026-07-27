@@ -29,7 +29,7 @@ A git repository that work is attributed to — the first-class "what I was work
 _Avoid_: Repo, folder, directory, workspace, cwd.
 
 **Ingestion**:
-The process of reading new records from the Harnesses' log files and turning them into stored Interactions. One *kind* of Job — user-triggered from the app's Jobs screen, not a daemon and not automatic — and safe to re-run.
+The process of reading new records from the Harnesses' log files and turning them into stored Interactions. One _kind_ of Job — user-triggered from the app's Jobs screen, not a daemon and not automatic — and safe to re-run.
 _Avoid_: Import, sync, parse, scan, indexing.
 
 **Job**:
