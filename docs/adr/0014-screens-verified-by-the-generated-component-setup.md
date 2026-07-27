@@ -37,7 +37,7 @@ Every other screen swaps its body for an empty-state sentence. Overview shows th
 - **DOM emulation plus a testing library.** Three dependencies and the largest transitive footprint of the three, for an idiom browser mode provides natively.
 - **Blanket component coverage.** Rejected: scope by where the wiring defect can hurt, and record the reason for every exclusion. An exclusion with a stated reason is a decision; an exclusion without one is the blind spot growing back.
 
-Measured cost of the chosen option: three direct dependencies, ten additional transitive packages, roughly 550 MB of Playwright browser binaries stored outside the dependency tree and re-downloaded on a Playwright major bump, and a suite runtime of a few seconds including browser launch. There is no CI here, so it is paid once, locally.
+Measured cost of the chosen option: three direct dependencies, ten additional transitive packages, roughly 550 MB of Playwright browser binaries stored outside the dependency tree and re-downloaded on a Playwright major bump, and a suite runtime of a few seconds including browser launch. Locally it is paid once. CI pays it too — the verify workflow caches the browser directory on the Playwright version, so a bump is a cache miss and a fresh download rather than a per-run cost.
 
 ## Consequences
 
