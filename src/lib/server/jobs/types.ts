@@ -37,8 +37,11 @@ export interface JobHandler<Payload extends JobPayload = JobPayload> {
 
 export interface JobExecutionObserver {
   correlationId: string;
-  progress(progress: JobProgress): void;
-  log(message: string): void;
+  // Function-typed properties, not methods: the backend forwards these as bare
+  // references, so an implementation that needed its own `this` would break on
+  // the first call. The type says what the code requires.
+  progress: (progress: JobProgress) => void;
+  log: (message: string) => void;
 }
 
 export interface JobExecutionBackend {
@@ -59,14 +62,14 @@ export class InProcessJobBackend implements JobExecutionBackend {
       typeof identity === 'string'
         ? JSON.stringify([identity, ''])
         : JSON.stringify([identity.type, identity.scope ?? '']);
-    this.#handlers.set(key, handler as JobHandler);
+    this.#handlers.set(key, handler);
   }
 
   registerScoped<Payload extends JobPayload>(
     type: string,
     handler: JobHandler<Payload>,
   ): void {
-    this.#scopedTypeHandlers.set(type, handler as JobHandler);
+    this.#scopedTypeHandlers.set(type, handler);
   }
 
   execute(job: Job, observer: JobExecutionObserver): Promise<void> {

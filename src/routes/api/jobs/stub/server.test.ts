@@ -3,11 +3,11 @@ import type { JobDisposition } from '$lib/jobs/contracts';
 import type { JobDispatch } from '$lib/server/jobs/dispatcher';
 import type { Job } from '$lib/server/jobs/types';
 
-const dispatcher = vi.hoisted(() => ({
-  jobs: [] as Job[],
-  correlationIds: [] as string[],
-  disposition: 'started' as JobDisposition,
-}));
+const dispatcher = vi.hoisted<{
+  jobs: Job[];
+  correlationIds: string[];
+  disposition: JobDisposition;
+}>(() => ({ jobs: [], correlationIds: [], disposition: 'started' }));
 
 vi.mock('node:fs/promises', () => ({ writeFile: vi.fn() }));
 

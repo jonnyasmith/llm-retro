@@ -28,7 +28,9 @@ async function messageFor(body: unknown): Promise<string> {
   try {
     await saveSettings(changes);
   } catch (cause) {
-    return cause instanceof Error ? cause.message : `not an Error: ${cause}`;
+    return cause instanceof Error
+      ? cause.message
+      : `not an Error: ${String(cause)}`;
   }
   throw new Error('The save resolved rather than reporting a failure');
 }

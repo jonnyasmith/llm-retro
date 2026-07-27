@@ -60,12 +60,16 @@ export interface PiGrammarOptions {
    * precede it with a `title` record and so searches every complete line.
    */
   sessionRecordIsFirst: boolean;
-  /** How this Harness accounts for an Interaction's sub-agents, if at all. */
-  discloseSubagents(
+  /**
+   * How this Harness accounts for an Interaction's sub-agents, if at all. A
+   * function-typed property rather than a method: the grammar destructures it
+   * off the options object, so it can never depend on its own `this`.
+   */
+  discloseSubagents: (
     records: PiRecord[],
     auxiliaryFiles: IngestSourceContents[],
     filePath: string,
-  ): SubagentDisclosure<PiRecord>;
+  ) => SubagentDisclosure<PiRecord>;
 }
 
 // The only Harness-shaped part of token extraction: which wire field is which
