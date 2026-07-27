@@ -49,11 +49,28 @@ export interface JobRunSummary {
   filesDone: number;
 }
 
-export type JobDisposition = 'started' | 'joined';
+export const jobDispositions = ['started', 'joined'] as const;
+
+export type JobDisposition = (typeof jobDispositions)[number];
 
 export interface JobTriggerPayload {
   correlation_id: string;
   disposition: JobDisposition;
+}
+
+/** True when a decoded body is a trigger answer this app can act on. */
+export function isJobTriggerPayload(
+  value: unknown,
+): value is JobTriggerPayload {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'correlation_id' in value &&
+    typeof value.correlation_id === 'string' &&
+    value.correlation_id !== '' &&
+    'disposition' in value &&
+    jobDispositions.some((disposition) => disposition === value.disposition)
+  );
 }
 
 export interface JobSnapshotPayload {

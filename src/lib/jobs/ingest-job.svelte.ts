@@ -35,14 +35,20 @@ export function requestedRunId(
 export class IngestJob {
   readonly #trigger: TriggerIngest;
   readonly #open: OpenJobRunConnection;
+  readonly #fallbackMessage: string;
   #run = $state<JobRunWatch | null>(null);
-  #error = $state<string | null>(null);
+  #error = $state('');
   #triggering = $state(false);
   #joinedRunId = $state<string | null>(null);
 
-  constructor(trigger: TriggerIngest, open: OpenJobRunConnection) {
+  constructor(
+    trigger: TriggerIngest,
+    open: OpenJobRunConnection,
+    fallbackMessage: string,
+  ) {
     this.#trigger = trigger;
     this.#open = open;
+    this.#fallbackMessage = fallbackMessage;
   }
 
   /** The Job run on screen, or null before one has been adopted. */
@@ -50,7 +56,7 @@ export class IngestJob {
     return this.#run;
   }
 
-  get error(): string | null {
+  get error(): string {
     return this.#error;
   }
 
@@ -98,14 +104,16 @@ export class IngestJob {
    */
   async trigger(): Promise<string | null> {
     this.#triggering = true;
-    this.#error = null;
+    this.#error = '';
     try {
       const { correlation_id, disposition } = await this.#trigger();
       this.#joinedRunId = disposition === 'joined' ? correlation_id : null;
       this.follow(correlation_id);
       return correlation_id;
     } catch (cause) {
-      this.#error = cause instanceof Error ? cause.message : String(cause);
+      // A failure with nothing legible to say gets this section's wording.
+      const message = cause instanceof Error ? cause.message.trim() : '';
+      this.#error = message || this.#fallbackMessage;
       return null;
     } finally {
       this.#triggering = false;

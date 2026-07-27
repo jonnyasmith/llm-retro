@@ -11,6 +11,8 @@ import {
 } from './ingest-job.svelte';
 import { TestConnection } from './job-run-connection-fixture';
 
+const fallbackMessage = 'Unable to start Claude ingestion';
+
 const unexpectedTrigger: TriggerIngest = () =>
   Promise.reject(new Error('This case triggers nothing'));
 
@@ -19,11 +21,15 @@ function createJob(trigger: TriggerIngest = unexpectedTrigger): {
   connections: Map<string, TestConnection>;
 } {
   const connections = new Map<string, TestConnection>();
-  const job = new IngestJob(trigger, (correlationId) => {
-    const connection = new TestConnection();
-    connections.set(correlationId, connection);
-    return connection;
-  });
+  const job = new IngestJob(
+    trigger,
+    (correlationId) => {
+      const connection = new TestConnection();
+      connections.set(correlationId, connection);
+      return connection;
+    },
+    fallbackMessage,
+  );
   return { job, connections };
 }
 
@@ -153,7 +159,7 @@ describe('IngestJob', () => {
     expect(job.triggering).toBe(false);
   });
 
-  it('reports a rejected trigger without adopting a run', async () => {
+  it('reports the words a rejected trigger came with', async () => {
     const { job } = createJob(() =>
       Promise.reject(new Error('Ingestion is already running')),
     );
@@ -163,6 +169,32 @@ describe('IngestJob', () => {
     expect(job.error).toBe('Ingestion is already running');
     expect(job.run).toBeNull();
     expect(job.triggering).toBe(false);
+  });
+
+  it('names itself when the trigger reports nothing legible', async () => {
+    // The client throws blank for a failure it cannot describe, and a message
+    // of only whitespace is no more legible than none.
+    const { job } = createJob(() => Promise.reject(new Error('  ')));
+
+    await expect(job.trigger()).resolves.toBeNull();
+
+    expect(job.error).toBe(fallbackMessage);
+  });
+
+  it('names itself when the trigger rejects with no Error at all', async () => {
+    let refuse: (cause: unknown) => void = () => {};
+    const { job } = createJob(
+      () =>
+        new Promise<JobTriggerPayload>((_, reject) => {
+          refuse = reject;
+        }),
+    );
+
+    const triggering = job.trigger();
+    refuse('a rejection that is not an Error');
+    await triggering;
+
+    expect(job.error).toBe(fallbackMessage);
   });
 
   it('clears the last failure when the next trigger begins', async () => {
@@ -177,7 +209,7 @@ describe('IngestJob', () => {
 
     await job.trigger();
 
-    expect(job.error).toBeNull();
+    expect(job.error).toBe('');
   });
 
   it('leaves an already-watched run connected', () => {
