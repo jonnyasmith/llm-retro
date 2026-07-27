@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   harnessLabels,
   isHarness,
+  isJobTriggerPayload,
   isTerminalJobRunStatus,
   jobRunStatuses,
   mapHarnesses,
@@ -110,6 +111,44 @@ describe('isTerminalJobRunStatus', () => {
     expect(isTerminalJobRunStatus('Succeeded')).toBe(false);
     expect(isTerminalJobRunStatus('succeeded ')).toBe(false);
     expect(isTerminalJobRunStatus('toString')).toBe(false);
+  });
+});
+
+describe('isJobTriggerPayload', () => {
+  it('accepts the payload the trigger endpoint answers with', () => {
+    expect(
+      isJobTriggerPayload({ correlation_id: 'run-1', disposition: 'started' }),
+    ).toBe(true);
+    expect(
+      isJobTriggerPayload({ correlation_id: 'run-1', disposition: 'joined' }),
+    ).toBe(true);
+  });
+
+  it('rejects a body that is not an object', () => {
+    expect(isJobTriggerPayload(null)).toBe(false);
+    expect(isJobTriggerPayload('run-1')).toBe(false);
+    expect(isJobTriggerPayload(undefined)).toBe(false);
+    expect(isJobTriggerPayload([])).toBe(false);
+  });
+
+  it('rejects a payload naming no Job run', () => {
+    expect(isJobTriggerPayload({ disposition: 'started' })).toBe(false);
+    expect(
+      isJobTriggerPayload({ correlation_id: '', disposition: 'started' }),
+    ).toBe(false);
+    expect(
+      isJobTriggerPayload({ correlation_id: 7, disposition: 'started' }),
+    ).toBe(false);
+  });
+
+  it('rejects a disposition the app cannot act on', () => {
+    expect(isJobTriggerPayload({ correlation_id: 'run-1' })).toBe(false);
+    expect(
+      isJobTriggerPayload({ correlation_id: 'run-1', disposition: 'queued' }),
+    ).toBe(false);
+    expect(
+      isJobTriggerPayload({ correlation_id: 'run-1', disposition: 'Started' }),
+    ).toBe(false);
   });
 });
 

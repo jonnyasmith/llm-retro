@@ -21,6 +21,7 @@ Every rule below holds at two or more sites today. A reviewer may cite these aga
 - **Mutate through a JSON `/api/*` endpoint followed by `invalidateAll()`.** There is no form action anywhere in `src/`.
 - **Type props as an inline object literal on `$props()`; use the generated `PageProps`/`LayoutProps` in routes.** No `interface Props` exists in the codebase.
 - **Seed editable state from props through `untrack`.** A form that owns a draft copies the prop once — `let timezone = $state(untrack(() => settings.timezone))` — so a reload does not stamp on what the user is typing.
+- **A client module surfaces only the server's own words.** At most one recognised failure shape per endpoint; anything else — a body that will not decode, a body that will not narrow, a rejected `fetch` — throws blank so the calling rune module supplies its own wording. A fault in the call itself is rethrown.
 
 ## Naming and vocabulary
 

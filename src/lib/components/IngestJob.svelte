@@ -10,7 +10,7 @@
   } from '$lib/jobs/contracts';
   import { IngestJob, requestedRunId } from '$lib/jobs/ingest-job.svelte';
   import { openJobRunEventSource } from '$lib/jobs/job-run-event-source';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
 
   let {
     harness,
@@ -22,9 +22,13 @@
     activeCorrelationId: string | null;
   } = $props();
   const harnessLabel = $derived(harnessLabels[harness]);
+  // The section this instance renders never changes Harness — the Jobs screen
+  // loops one over each — so its wording is read once at construction rather
+  // than tracked.
   const job = new IngestJob(
     () => triggerIngest(harness),
     openJobRunEventSource,
+    untrack(() => `Unable to start ${harnessLabel} ingestion`),
   );
 
   async function trigger() {
