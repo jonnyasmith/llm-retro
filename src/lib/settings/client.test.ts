@@ -22,9 +22,11 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-/** The message a save surfaces when the server rejects it with this body. */
-async function messageFor(body: unknown): Promise<string> {
-  post.mockResolvedValue(Response.json(body, { status: 400 }));
+/**
+ * The message a save reports when it fails. '' is the client saying it has
+ * nothing legible, which the form answers with its own wording.
+ */
+async function reportedMessage(): Promise<string> {
   try {
     await saveSettings(changes);
   } catch (cause) {
@@ -33,6 +35,12 @@ async function messageFor(body: unknown): Promise<string> {
       : `not an Error: ${String(cause)}`;
   }
   throw new Error('The save resolved rather than reporting a failure');
+}
+
+/** The message a save reports when the server rejects it with this body. */
+async function messageFor(body: unknown): Promise<string> {
+  post.mockResolvedValue(Response.json(body, { status: 400 }));
+  return reportedMessage();
 }
 
 describe('saveSettings', () => {
@@ -87,47 +95,63 @@ describe('saveSettings', () => {
     ).resolves.toEqual('Ingestion is running');
   });
 
-  it('falls back when the failure body is not an object', async () => {
-    await expect(messageFor(null)).resolves.toEqual('Unable to save settings');
-    await expect(messageFor(42)).resolves.toEqual('Unable to save settings');
-    await expect(messageFor('Ingestion is running')).resolves.toEqual(
-      'Unable to save settings',
-    );
-    await expect(messageFor([])).resolves.toEqual('Unable to save settings');
+  it('says nothing when the failure body is not an object', async () => {
+    await expect(messageFor(null)).resolves.toEqual('');
+    await expect(messageFor(42)).resolves.toEqual('');
+    await expect(messageFor('Ingestion is running')).resolves.toEqual('');
+    await expect(messageFor([])).resolves.toEqual('');
   });
 
-  it('falls back when the failure body has no string error', async () => {
-    await expect(messageFor({})).resolves.toEqual('Unable to save settings');
-    await expect(messageFor({ error: 42 })).resolves.toEqual(
-      'Unable to save settings',
-    );
-    await expect(messageFor({ error: null })).resolves.toEqual(
-      'Unable to save settings',
-    );
-    await expect(messageFor({ error: { message: 'No' } })).resolves.toEqual(
-      'Unable to save settings',
-    );
-    await expect(
-      messageFor({ message: 'Ingestion is running' }),
-    ).resolves.toEqual('Unable to save settings');
+  it('says nothing when the failure body has no string error', async () => {
+    await expect(messageFor({})).resolves.toEqual('');
+    await expect(messageFor({ error: 42 })).resolves.toEqual('');
+    await expect(messageFor({ error: null })).resolves.toEqual('');
+    await expect(messageFor({ error: { message: 'No' } })).resolves.toEqual('');
   });
 
-  it('passes an empty error message on rather than filling it in', async () => {
-    // An empty string is still a string, so the narrowing accepts it. The save
-    // lifecycle beside this module substitutes the form's own wording for a
-    // blank message, which is why nothing here has to.
+  it("says nothing when the failure is SvelteKit's own error response", async () => {
+    // An unhandled throw in the endpoint answers `{ message }`, not `{ error }`
+    // — a framework string rather than words chosen for this user, so the form
+    // names itself instead.
+    await expect(messageFor({ message: 'Internal Error' })).resolves.toEqual(
+      '',
+    );
+  });
+
+  it('treats an explicitly empty server message as no message', async () => {
+    // An empty string is still a string, so the narrowing accepts it and it
+    // joins every other failure the client cannot describe.
     await expect(messageFor({ error: '' })).resolves.toEqual('');
   });
 
-  it('reports the decode failure when the failure body is not JSON', async () => {
-    // The one unrecognisable response the narrowing never sees. The body is
-    // decoded before the status is read, so a failure page that is not JSON
-    // throws from the decode instead of reaching the fallback message.
+  it('says nothing when the failure body is not JSON', async () => {
+    // A reverse proxy's error page in front of the Node server. The status is
+    // read before the body, so the decode failure is part of the narrowing
+    // rather than a step in front of it.
     post.mockResolvedValue(
       new Response('<html>Bad gateway</html>', { status: 502 }),
     );
 
-    await expect(saveSettings(changes)).rejects.toThrow(SyntaxError);
+    await expect(reportedMessage()).resolves.toEqual('');
+  });
+
+  it('says nothing when nothing answered the request', async () => {
+    // A dead server rejects the fetch rather than answering it. Its own wording
+    // names the transport, which is not something to show the user.
+    post.mockRejectedValue(new TypeError('Failed to fetch'));
+
+    await expect(reportedMessage()).resolves.toEqual('');
+    expect(invalidateAll).not.toHaveBeenCalled();
+  });
+
+  it('refreshes the screen even when an accepted save answers with no JSON', async () => {
+    // Nothing reads the body of a successful save, so nothing about it can
+    // fail the save.
+    post.mockResolvedValue(new Response('<html>Saved</html>', { status: 200 }));
+
+    await saveSettings(changes);
+
+    expect(invalidateAll).toHaveBeenCalledTimes(1);
   });
 
   it('leaves the screen alone when the save is rejected', async () => {
