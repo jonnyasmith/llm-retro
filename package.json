@@ -10,8 +10,8 @@
     "start": "node build",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "lint": "prettier --check .prettierrc package.json '*.config.*' tsconfig.json 'src/**/*.{ts,svelte,html}' 'drizzle/**/*.json' && eslint .",
-    "format": "prettier --write .prettierrc package.json '*.config.*' tsconfig.json 'src/**/*.{ts,svelte,html}' 'drizzle/**/*.json'",
+    "lint": "prettier --check . && eslint .",
+    "format": "prettier --write .",
     "test": "vitest run",
     "test:browsers": "playwright install chromium"
   },

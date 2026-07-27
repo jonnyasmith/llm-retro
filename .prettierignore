@@ -1,4 +1,8 @@
 .svelte-kit
 build
 node_modules
+coverage
+__screenshots__
+.vitest-attachments
+worktree.yaml
 pnpm-lock.yaml
