@@ -125,9 +125,7 @@ describe('saveSettings', () => {
   });
 
   it('says nothing when the failure body is not JSON', async () => {
-    // A reverse proxy's error page in front of the Node server. The status is
-    // read before the body, so the decode failure is part of the narrowing
-    // rather than a step in front of it.
+    // A reverse proxy's error page in front of the Node server.
     post.mockResolvedValue(
       new Response('<html>Bad gateway</html>', { status: 502 }),
     );
@@ -142,6 +140,15 @@ describe('saveSettings', () => {
 
     await expect(reportedMessage()).resolves.toEqual('');
     expect(invalidateAll).not.toHaveBeenCalled();
+  });
+
+  it('rethrows a fault in the request rather than describing it', async () => {
+    // Only a transport failure is the server's silence. Anything else went
+    // wrong in here, and hiding it behind the form's wording would bury it.
+    const fault = new RangeError('Maximum call stack size exceeded');
+    post.mockRejectedValue(fault);
+
+    await expect(saveSettings(changes)).rejects.toBe(fault);
   });
 
   it('refreshes the screen even when an accepted save answers with no JSON', async () => {

@@ -8,20 +8,24 @@ import type { SettingsChanges } from './contracts';
  * Throws on failure carrying one of two messages: the server's own words, or
  * nothing at all. The server counts as having spoken only when it answers a
  * failure with a JSON object holding a string `error`; a body that will not
- * decode, a rejected `fetch` and any other shape are all indescribable, and
- * throw blank so the calling form supplies its own wording.
+ * decode, a request nothing answered, and any other shape are all
+ * indescribable, and throw blank so the calling form supplies its own wording.
+ * A fault in the request itself is nobody's to describe and is rethrown.
  */
 export async function saveSettings(changes: SettingsChanges): Promise<void> {
+  const body = JSON.stringify(changes);
   let response: Response;
   try {
     response = await fetch('/api/settings', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(changes),
+      body,
     });
-  } catch {
-    // Nothing answered, so there is nothing to describe the failure with.
-    throw new Error('');
+  } catch (cause) {
+    // `fetch` rejects with a TypeError when nothing answered it. Anything else
+    // is a fault of this call rather than of the network.
+    if (!(cause instanceof TypeError)) throw cause;
+    throw new Error('', { cause });
   }
   if (!response.ok) throw new Error(await serverMessage(response));
   await invalidateAll();
