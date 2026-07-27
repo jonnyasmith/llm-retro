@@ -2,11 +2,11 @@
 
 The conventions this codebase follows consistently that neither Prettier, ESLint nor `tsc` can catch. Formatting and type rules are tooling's job — `pnpm lint` and `pnpm check` are the authority there, and nothing about them is repeated here.
 
-Every rule below holds at two or more sites today. A reviewer may cite these against a diff; a deviation is a finding, not a matter of taste.
+Every rule below holds at two or more sites today. A reviewer may cite these against a diff; a deviation is a finding, not a matter of taste. This file is not the whole of what binds a change — the decisions in `docs/adr/` bind code too, and are not summarised here.
 
 ## Layering and imports
 
-- **Import `bootstrap` only from a route file.** `+page.server.ts` and `+server.ts` are its sole importers; they pass `Database` down as a plain parameter, so server modules take the store as an argument rather than reaching for the singleton. ADR-0013 fixes Connection ownership; this is the import rule that keeps it true.
+- **Import `bootstrap` only from a route file.** `+page.server.ts` and `+server.ts` are its sole importers; they pass `Database` down as a plain parameter, so server modules take the store as an argument rather than reaching for the singleton.
 - **Put every type that crosses the client/server line in a `contracts.ts` beside its feature.** `$lib/jobs/contracts.ts`, `$lib/settings/contracts.ts`. Nothing outside a route or a server test imports `$lib/server`.
 - **Inject the one effectful step as an exported function type.** A rune module declares `export type TriggerIngest = () => Promise<JobTriggerPayload>` and receives it, rather than importing the client module — that is what lets a test drive it without a mocking library.
 
@@ -31,19 +31,6 @@ Every rule below holds at two or more sites today. A reviewer may cite these aga
 
 - **Hand-roll doubles into a shared `*-fixture.ts`.** `job-run-connection-fixture.ts`, `ingest-fixture.ts`, `render-fixture.ts`. `vi.fn`/`vi.mock` is reserved for globals and framework modules — `$app/navigation`, `fetch`, `$lib/server/bootstrap` in a route test.
 - **One `describe` per exported symbol, and `it` names in the third person describing behaviour.** No arrange/act/assert comments. `expect.requireAssertions` is on, so an assertion-free test fails rather than passes silently.
-
-## Where the rest of the rules live
-
-Binding constraints this file deliberately does not restate — read the ADR when the diff touches its area:
-
-| Area                                           | ADR                                                         |
-| ---------------------------------------------- | ----------------------------------------------------------- |
-| Store access, and the `unsafeSqlite` escape    | `0013-connection-owns-the-store-access-it-publishes.md`     |
-| Rune modules, render tests, what is not tested | `0014-screens-verified-by-the-generated-component-setup.md` |
-| Harness-shaped logic vs the shared pipeline    | `0008-harness-adapter-strategy-behind-shared-pipeline.md`   |
-| UTC storage and precomputed local buckets      | `0005-utc-truth-with-precomputed-local-buckets.md`          |
-| Interaction grain and `interaction_key`        | `0001-interaction-grain-bounded-by-user-prompts.md`         |
-| Project identity and nullable `projectId`      | `0002-project-identity-by-local-repo-root-path.md`          |
 
 ## Not settled
 
