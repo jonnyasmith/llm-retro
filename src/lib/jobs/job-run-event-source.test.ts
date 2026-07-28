@@ -65,17 +65,6 @@ function open(id = correlationId): {
   return { connection, source };
 }
 
-/** Opens a connection already reporting its state into the returned array. */
-function watched(): {
-  source: TestEventSource;
-  states: JobRunConnectionState[];
-} {
-  const { connection, source } = open();
-  const states: JobRunConnectionState[] = [];
-  connection.onState((state) => states.push(state));
-  return { source, states };
-}
-
 function snapshot(): JobSnapshotPayload {
   return {
     correlation_id: correlationId,
@@ -85,6 +74,14 @@ function snapshot(): JobSnapshotPayload {
     current_file: '/logs/claude/a.jsonl',
     error: null,
     timestamp: 1_000,
+  };
+}
+
+function logLine(): JobLogPayload {
+  return {
+    correlation_id: correlationId,
+    message: 'Found 4 Claude session files',
+    timestamp: 2_000,
   };
 }
 
@@ -98,128 +95,206 @@ afterEach(() => {
 });
 
 describe('openJobRunEventSource', () => {
-  it('connects to the event stream for the Job run it was given', () => {
-    expect(open('run-1').source.url).toEqual('/api/jobs/run-1/events');
+  let connection: JobRunConnection;
+  let source: TestEventSource;
+  let states: JobRunConnectionState[];
+
+  beforeEach(() => {
+    states = [];
+    ({ connection, source } = open());
   });
 
-  it('escapes a correlation id that would otherwise reshape the path', () => {
-    expect(open('../settings?x=1').source.url).toEqual(
-      '/api/jobs/..%2Fsettings%3Fx%3D1/events',
+  function watch(): void {
+    connection.onState((state) => states.push(state));
+  }
+
+  describe('a connection nobody is watching', () => {
+    it('connects to the event stream for the Job run it was given', () => {
+      expect(source.url).toEqual('/api/jobs/run-1/events');
+    });
+
+    it('escapes a correlation id that would otherwise reshape the path', () => {
+      expect(open('../settings?x=1').source.url).toEqual(
+        '/api/jobs/..%2Fsettings%3Fx%3D1/events',
+      );
+    });
+
+    it('drops a state change rather than holding it for a later watcher', () => {
+      // The reporting callback is assigned after the listeners are attached,
+      // so this silent window is a property of the connection, not an accident
+      // of how fast a caller subscribes.
+      source.readyState = TestEventSource.OPEN;
+      source.deliver('open');
+
+      watch();
+
+      expect(states).toEqual([]);
+    });
+
+    it('reports the state changes that arrive once something watches', () => {
+      source.readyState = TestEventSource.OPEN;
+      source.deliver('open');
+      watch();
+
+      source.readyState = TestEventSource.CLOSED;
+      source.deliver('error');
+
+      expect(states).toEqual(['closed']);
+    });
+  });
+
+  describe('a watched connection', () => {
+    beforeEach(watch);
+
+    it('reports itself live once the stream opens', () => {
+      source.readyState = TestEventSource.OPEN;
+      source.deliver('open');
+
+      expect(states).toEqual(['live']);
+    });
+
+    it('reports to a later watcher', () => {
+      const later: JobRunConnectionState[] = [];
+      connection.onState((state) => later.push(state));
+
+      source.deliver('open');
+
+      expect(later).toEqual(['live']);
+    });
+
+    it('stops reporting to the watcher a later one replaced', () => {
+      connection.onState(() => {});
+
+      source.deliver('open');
+
+      expect(states).toEqual([]);
+    });
+  });
+
+  describe('a watched connection the browser has not given up on', () => {
+    beforeEach(watch);
+
+    it.each([TestEventSource.CONNECTING, TestEventSource.OPEN])(
+      'describes an error as a drop while a retry is still possible',
+      (readyState) => {
+        source.readyState = readyState;
+
+        source.deliver('error');
+
+        expect(states).toEqual(['dropped']);
+      },
     );
   });
 
-  it('reports the connection live once the stream opens', () => {
-    const { source, states } = watched();
+  describe('a watched connection the browser has given up on', () => {
+    beforeEach(() => {
+      watch();
+      source.readyState = TestEventSource.CLOSED;
+    });
 
-    source.readyState = TestEventSource.OPEN;
-    source.deliver('open');
+    it('describes the error as a close rather than a drop', () => {
+      source.deliver('error');
 
-    expect(states).toEqual(['live']);
+      expect(states).toEqual(['closed']);
+    });
   });
 
-  it('describes a connection the browser is retrying as dropped', () => {
-    const { source, states } = watched();
+  describe('a watched connection that has already dropped', () => {
+    beforeEach(() => {
+      watch();
+      source.readyState = TestEventSource.CONNECTING;
+      source.deliver('error');
+    });
 
-    source.readyState = TestEventSource.CONNECTING;
-    source.deliver('error');
+    it('reports a give-up that follows, reading the ready state afresh', () => {
+      // One error event covers both outcomes, so a give-up after a retry has
+      // to be reported from the state that error arrived in.
+      source.readyState = TestEventSource.CLOSED;
+      source.deliver('error');
 
-    expect(states).toEqual(['dropped']);
+      expect(states).toEqual(['dropped', 'closed']);
+    });
   });
 
-  it('describes a connection the browser has given up on as closed', () => {
-    const { source, states } = watched();
+  describe('a connection with a subscriber for each kind of frame', () => {
+    let received: { snapshot: JobSnapshotPayload[]; log: JobLogPayload[] };
 
-    source.readyState = TestEventSource.CLOSED;
-    source.deliver('error');
+    beforeEach(() => {
+      received = { snapshot: [], log: [] };
+      connection.subscribe('snapshot', (payload) =>
+        received.snapshot.push(payload),
+      );
+      connection.subscribe('log', (payload) => received.log.push(payload));
+    });
 
-    expect(states).toEqual(['closed']);
+    it.each([
+      { kind: 'snapshot', payload: snapshot() },
+      { kind: 'log', payload: logLine() },
+    ] as const)(
+      'hands a subscriber the payload decoded from its frame',
+      ({ kind, payload }) => {
+        source.deliver(kind, JSON.stringify(payload));
+
+        expect(received[kind]).toEqual([payload]);
+      },
+    );
+
+    it('withholds a frame from the subscribers of every other kind', () => {
+      source.deliver('log', JSON.stringify(logLine()));
+
+      expect(received.snapshot).toEqual([]);
+    });
+
+    it('refuses a malformed frame rather than passing it on', () => {
+      expect(() => source.deliver('log', 'not json')).toThrow(SyntaxError);
+      expect(received.log).toEqual([]);
+    });
   });
 
-  it('reads the ready state afresh for each error', () => {
-    // One error event covers both outcomes, so a retried drop followed by a
-    // give-up has to be reported from the state each arrived in.
-    const { source, states } = watched();
+  describe('a connection with two subscribers to one kind of frame', () => {
+    let first: JobLogPayload[];
+    let second: JobLogPayload[];
 
-    source.readyState = TestEventSource.CONNECTING;
-    source.deliver('error');
-    source.readyState = TestEventSource.CLOSED;
-    source.deliver('error');
+    beforeEach(() => {
+      first = [];
+      second = [];
+      connection.subscribe('log', (payload) => first.push(payload));
+      connection.subscribe('log', (payload) => second.push(payload));
+    });
 
-    expect(states).toEqual(['dropped', 'closed']);
+    it('hands the frame to every subscriber, replacing none of them', () => {
+      source.deliver('log', JSON.stringify(logLine()));
+
+      expect(first).toEqual([logLine()]);
+      expect(second).toEqual([logLine()]);
+    });
   });
 
-  it('drops states that arrive before anything has subscribed', () => {
-    // The reporting callback is assigned after the listeners are attached, so
-    // this silent window is a property of the connection, not an accident of
-    // how fast a caller subscribes.
-    const { connection, source } = open();
-    source.readyState = TestEventSource.OPEN;
-    source.deliver('open');
+  describe('a closed connection', () => {
+    let logs: JobLogPayload[];
 
-    const states: JobRunConnectionState[] = [];
-    connection.onState((state) => states.push(state));
-    source.readyState = TestEventSource.CLOSED;
-    source.deliver('error');
+    beforeEach(() => {
+      watch();
+      logs = [];
+      connection.subscribe('log', (payload) => logs.push(payload));
+      connection.close();
+    });
 
-    expect(states).toEqual(['closed']);
-  });
+    it('closes the underlying stream', () => {
+      expect(source.closes).toEqual(1);
+      expect(source.readyState).toEqual(TestEventSource.CLOSED);
+    });
 
-  it('reports to the latest state subscriber only', () => {
-    const { connection, source } = open();
-    const first: JobRunConnectionState[] = [];
-    const second: JobRunConnectionState[] = [];
-    connection.onState((state) => first.push(state));
-    connection.onState((state) => second.push(state));
+    it('says nothing to its watcher about the close it was asked for', () => {
+      expect(states).toEqual([]);
+    });
 
-    source.deliver('open');
+    it('keeps its subscribers, the stream being the whole of its teardown', () => {
+      // Closing the stream is what stops delivery in a browser, so there is
+      // nothing for the connection to detach on its own account.
+      source.deliver('log', JSON.stringify(logLine()));
 
-    expect(first).toEqual([]);
-    expect(second).toEqual(['live']);
-  });
-
-  it('hands a subscriber the payload decoded from its frame', () => {
-    const { connection, source } = open();
-    const received: JobSnapshotPayload[] = [];
-    connection.subscribe('snapshot', (payload) => received.push(payload));
-
-    source.deliver('snapshot', JSON.stringify(snapshot()));
-
-    expect(received).toEqual([snapshot()]);
-  });
-
-  it('delivers each event only to the kind that subscribed to it', () => {
-    const log: JobLogPayload = {
-      correlation_id: correlationId,
-      message: 'Found 4 Claude session files',
-      timestamp: 2_000,
-    };
-    const { connection, source } = open();
-    const snapshots: JobSnapshotPayload[] = [];
-    const logs: JobLogPayload[] = [];
-    connection.subscribe('snapshot', (payload) => snapshots.push(payload));
-    connection.subscribe('log', (payload) => logs.push(payload));
-
-    source.deliver('log', JSON.stringify(log));
-
-    expect(logs).toEqual([log]);
-    expect(snapshots).toEqual([]);
-  });
-
-  it('refuses a malformed frame rather than passing it on', () => {
-    const { connection, source } = open();
-    const received: JobLogPayload[] = [];
-    connection.subscribe('log', (payload) => received.push(payload));
-
-    expect(() => source.deliver('log', 'not json')).toThrow(SyntaxError);
-    expect(received).toEqual([]);
-  });
-
-  it('closes the underlying stream when the caller closes', () => {
-    const { connection, source } = open();
-
-    connection.close();
-
-    expect(source.closes).toEqual(1);
-    expect(source.readyState).toEqual(TestEventSource.CLOSED);
+      expect(logs).toEqual([logLine()]);
+    });
   });
 });

@@ -1,7 +1,11 @@
 import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, extname, join } from 'node:path';
-import { openDatabase, type Database } from '../database/connection';
+import {
+  openDatabase,
+  type Connection,
+  type Database,
+} from '../database/connection';
 import type { Harness } from '../../jobs/contracts';
 import { persistSettings } from '../database/store';
 import {
@@ -29,7 +33,15 @@ export const FAKE_HARNESS: Harness = 'claude';
 
 const temporaryDirectories: string[] = [];
 
-export async function createPipelineFixture() {
+/** A temporary Store beside the log source directory a pipeline test reads. */
+export interface PipelineFixture extends Connection {
+  /** The temporary directory holding both the Store and the log source. */
+  root: string;
+  /** The sole log source the fake Harness enumerates session files from. */
+  logSource: string;
+}
+
+export async function createPipelineFixture(): Promise<PipelineFixture> {
   const root = await mkdtemp(join(tmpdir(), 'llm-retro-ingest-pipeline-'));
   temporaryDirectories.push(root);
   const dataDirectory = join(root, 'data');

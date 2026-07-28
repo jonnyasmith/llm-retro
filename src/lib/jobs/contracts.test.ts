@@ -83,27 +83,31 @@ describe('mapHarnesses', () => {
   });
 });
 
-describe('isTerminalJobRunStatus', () => {
-  it('offers View for a finished Job run and Watch for one still in flight', () => {
-    // Exhaustive by type as well as by value: a new Job run status cannot land
-    // without a decision about which side of the split it falls on.
-    const terminal: Record<JobRunStatus, boolean> = {
-      pending: false,
-      running: false,
-      succeeded: true,
-      failed: true,
-      interrupted: true,
-    };
+// Exhaustive by type as well as by value: a new Job run status cannot land
+// without a decision about which side of the split it falls on — the app
+// offers View for the finished ones and Watch for the rest.
+const terminal: Record<JobRunStatus, boolean> = {
+  pending: false,
+  running: false,
+  succeeded: true,
+  failed: true,
+  interrupted: true,
+};
 
-    expect(
-      Object.fromEntries(
-        jobRunStatuses.map((status) => [
-          status,
-          isTerminalJobRunStatus(status),
-        ]),
-      ),
-    ).toEqual(terminal);
-  });
+describe('isTerminalJobRunStatus', () => {
+  it.each(jobRunStatuses.filter((status) => terminal[status]))(
+    'counts a finished Job run as terminal',
+    (status) => {
+      expect(isTerminalJobRunStatus(status)).toBe(true);
+    },
+  );
+
+  it.each(jobRunStatuses.filter((status) => !terminal[status]))(
+    'counts a Job run still in flight as unfinished',
+    (status) => {
+      expect(isTerminalJobRunStatus(status)).toBe(false);
+    },
+  );
 
   it('rejects a status the app does not have', () => {
     expect(isTerminalJobRunStatus('')).toBe(false);

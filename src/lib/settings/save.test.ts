@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import type { SettingsChanges } from './contracts';
 import {
   SettingsSave,
@@ -7,6 +7,9 @@ import {
 } from './save.svelte';
 
 const fallbackMessage = 'Unable to save time settings';
+const changes: SettingsChanges = { timezone: 'Europe/London' };
+const confirmation = 'Time settings saved.';
+const refusal = 'Ingestion is running; try again once it finishes';
 
 /** Stands in for the Settings write path, settled by hand. */
 class TestSaveCall {
@@ -16,8 +19,8 @@ class TestSaveCall {
     reject: (cause: unknown) => void;
   } | null = null;
 
-  readonly save: SaveSettingsChanges = (changes) => {
-    this.posted.push(changes);
+  readonly save: SaveSettingsChanges = (posted) => {
+    this.posted.push(posted);
     return new Promise<void>((resolve, reject) => {
       this.#settle = { resolve, reject };
     });
@@ -39,157 +42,201 @@ class TestSaveCall {
   }
 }
 
-function createSave(): { save: SettingsSave; call: TestSaveCall } {
-  const call = new TestSaveCall();
-  return { save: new SettingsSave(call.save, fallbackMessage), call };
-}
-
 function attempt(
   overrides: Partial<SettingsSaveAttempt> = {},
 ): SettingsSaveAttempt {
   return {
-    changes: { timezone: 'Europe/London' },
-    confirmation: 'Time settings saved.',
+    changes,
+    confirmation,
     adopt: () => {},
     ...overrides,
   };
 }
 
 describe('SettingsSave', () => {
-  it('starts with nothing in flight and nothing to report', () => {
-    const { save } = createSave();
+  let save: SettingsSave;
+  let call: TestSaveCall;
 
-    expect(save.saving).toBe(false);
-    expect(save.error).toBe('');
-    expect(save.confirmation).toBe('');
+  beforeEach(() => {
+    call = new TestSaveCall();
+    save = new SettingsSave(call.save, fallbackMessage);
   });
 
-  it('posts the changes it was given', async () => {
-    const { save, call } = createSave();
+  describe('a save with nothing attempted yet', () => {
+    it('reports nothing in flight', () => {
+      expect(save.saving).toBe(false);
+    });
 
-    const settled = save.attempt(
-      attempt({ changes: { rawArchiveEnabled: false, rawArchivePath: null } }),
+    it('has no failure to report', () => {
+      expect(save.error).toBe('');
+    });
+
+    it('has nothing to confirm', () => {
+      expect(save.confirmation).toBe('');
+    });
+  });
+
+  describe('a save in flight', () => {
+    let settled: Promise<void>;
+    let adopted: boolean;
+    let confirmationWhileAdopting: string;
+
+    beforeEach(() => {
+      adopted = false;
+      confirmationWhileAdopting = 'never ran';
+      settled = save.attempt(
+        attempt({
+          adopt: () => {
+            adopted = true;
+            confirmationWhileAdopting = save.confirmation;
+          },
+        }),
+      );
+    });
+
+    it('posts the changes it was given', () => {
+      expect(call.posted).toEqual([changes]);
+    });
+
+    it('reports itself saving', () => {
+      expect(save.saving).toBe(true);
+    });
+
+    it.each([
+      { cause: 'a rejection that is not an Error' },
+      { cause: new Error('') },
+      { cause: new Error('   ') },
+    ])(
+      'falls back to this form\u2019s wording when the failure says nothing',
+      async ({ cause }) => {
+        call.fail(cause);
+        await settled;
+
+        expect(save.error).toBe(fallbackMessage);
+      },
     );
-    call.succeed();
-    await settled;
 
-    expect(call.posted).toEqual([
-      { rawArchiveEnabled: false, rawArchivePath: null },
-    ]);
+    it('trims the wording the failure came with', async () => {
+      call.fail(new Error(`  ${refusal}  `));
+      await settled;
+
+      expect(save.error).toBe(refusal);
+    });
+
+    describe('that the server accepted', () => {
+      beforeEach(async () => {
+        call.succeed();
+        await settled;
+      });
+
+      it('takes what the server stored before it confirms the save', () => {
+        expect(confirmationWhileAdopting).toBe('');
+      });
+
+      it('shows the confirmation the attempt supplied', () => {
+        expect(save.confirmation).toBe(confirmation);
+      });
+
+      it('has no failure to report', () => {
+        expect(save.error).toBe('');
+      });
+
+      it('reports nothing in flight', () => {
+        expect(save.saving).toBe(false);
+      });
+    });
+
+    describe('that the server rejected', () => {
+      beforeEach(async () => {
+        call.fail(new Error(refusal));
+        await settled;
+      });
+
+      it('reports the failure\u2019s own message', () => {
+        expect(save.error).toBe(refusal);
+      });
+
+      it('does not take server state the save never reached', () => {
+        expect(adopted).toBe(false);
+      });
+
+      it('has nothing to confirm', () => {
+        expect(save.confirmation).toBe('');
+      });
+
+      it('leaves the form usable', () => {
+        expect(save.saving).toBe(false);
+      });
+    });
   });
 
-  it('is saving from the moment an attempt begins until it settles', async () => {
-    const { save, call } = createSave();
+  describe('a fresh attempt after an accepted save', () => {
+    let settled: Promise<void>;
 
-    const settled = save.attempt(attempt());
-    expect(save.saving).toBe(true);
+    beforeEach(async () => {
+      const accepted = save.attempt(attempt());
+      call.succeed();
+      await accepted;
 
-    call.succeed();
-    await settled;
+      settled = save.attempt(attempt());
+    });
 
-    expect(save.saving).toBe(false);
-    expect(save.confirmation).toBe('Time settings saved.');
+    it('clears the stale confirmation before it settles', () => {
+      expect(save.confirmation).toBe('');
+    });
+
+    it('reports itself saving again', () => {
+      expect(save.saving).toBe(true);
+    });
+
+    describe('that the server rejected', () => {
+      beforeEach(async () => {
+        call.fail(new Error(refusal));
+        await settled;
+      });
+
+      it('leaves no confirmation standing', () => {
+        expect(save.confirmation).toBe('');
+      });
+
+      it('reports the failure', () => {
+        expect(save.error).toBe(refusal);
+      });
+    });
   });
 
-  it('takes what the server stored before it confirms the save', async () => {
-    const { save, call } = createSave();
-    let confirmationWhileAdopting = 'never ran';
+  describe('a fresh attempt after a rejected save', () => {
+    let settled: Promise<void>;
 
-    const settled = save.attempt(
-      attempt({
-        adopt: () => {
-          confirmationWhileAdopting = save.confirmation;
-        },
-      }),
-    );
-    call.succeed();
-    await settled;
+    beforeEach(async () => {
+      const rejected = save.attempt(attempt());
+      call.fail(new Error('Timezone is not recognised'));
+      await rejected;
 
-    expect(confirmationWhileAdopting).toBe('');
-    expect(save.confirmation).toBe('Time settings saved.');
-  });
+      settled = save.attempt(attempt());
+    });
 
-  it("reports the failure's own message", async () => {
-    const { save, call } = createSave();
+    it('clears the stale error before it settles', () => {
+      expect(save.error).toBe('');
+    });
 
-    const settled = save.attempt(attempt());
-    call.fail(new Error('Ingestion is running; try again once it finishes'));
-    await settled;
+    it('reports itself saving again', () => {
+      expect(save.saving).toBe(true);
+    });
 
-    expect(save.error).toBe('Ingestion is running; try again once it finishes');
-    expect(save.confirmation).toBe('');
-  });
+    describe('that the server accepted', () => {
+      beforeEach(async () => {
+        call.succeed();
+        await settled;
+      });
 
-  it('falls back to this form\u2019s wording when the failure says nothing', async () => {
-    const { save, call } = createSave();
+      it('leaves no error standing', () => {
+        expect(save.error).toBe('');
+      });
 
-    const settled = save.attempt(attempt());
-    call.fail('a rejection that is not an Error');
-    await settled;
-
-    expect(save.error).toBe(fallbackMessage);
-  });
-
-  it('falls back rather than showing a blank error', async () => {
-    const { save, call } = createSave();
-
-    const settled = save.attempt(attempt());
-    call.fail(new Error('   '));
-    await settled;
-
-    expect(save.error).toBe(fallbackMessage);
-  });
-
-  it('does not take server state when the save fails', async () => {
-    const { save, call } = createSave();
-    let adopted = false;
-
-    const settled = save.attempt(attempt({ adopt: () => (adopted = true) }));
-    call.fail(new Error('Timezone is not recognised'));
-    await settled;
-
-    expect(adopted).toBe(false);
-  });
-
-  it('leaves the form usable after a failure', async () => {
-    const { save, call } = createSave();
-
-    const settled = save.attempt(attempt());
-    call.fail(new Error('Timezone is not recognised'));
-    await settled;
-
-    expect(save.saving).toBe(false);
-  });
-
-  it('clears a stale error before a fresh attempt succeeds', async () => {
-    const { save, call } = createSave();
-    const failed = save.attempt(attempt());
-    call.fail(new Error('Timezone is not recognised'));
-    await failed;
-
-    const settled = save.attempt(attempt());
-    expect(save.error).toBe('');
-
-    call.succeed();
-    await settled;
-
-    expect(save.error).toBe('');
-    expect(save.confirmation).toBe('Time settings saved.');
-  });
-
-  it('clears a stale confirmation before a fresh attempt fails', async () => {
-    const { save, call } = createSave();
-    const succeeded = save.attempt(attempt());
-    call.succeed();
-    await succeeded;
-
-    const settled = save.attempt(attempt());
-    expect(save.confirmation).toBe('');
-
-    call.fail(new Error('Timezone is not recognised'));
-    await settled;
-
-    expect(save.confirmation).toBe('');
-    expect(save.error).toBe('Timezone is not recognised');
+      it('confirms the save', () => {
+        expect(save.confirmation).toBe(confirmation);
+      });
+    });
   });
 });

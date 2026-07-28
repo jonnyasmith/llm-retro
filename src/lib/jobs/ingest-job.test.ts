@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import type {
   JobRunSummary,
   JobSnapshotPayload,
@@ -35,6 +35,26 @@ function createJob(trigger: TriggerIngest = unexpectedTrigger): {
 
 function started(correlationId: string): JobTriggerPayload {
   return { correlation_id: correlationId, disposition: 'started' };
+}
+
+function joinedRun(correlationId: string): JobTriggerPayload {
+  return { correlation_id: correlationId, disposition: 'joined' };
+}
+
+/**
+ * The rejection escapes its executor because one of the cases specified here
+ * rejects with something that is not an Error at all, which is precisely what
+ * an executor's own `reject` may not be handed.
+ */
+function rejectingTrigger(cause: unknown): TriggerIngest {
+  return () => {
+    let refuse: (cause: unknown) => void = () => {};
+    const rejected = new Promise<JobTriggerPayload>((_, reject) => {
+      refuse = reject;
+    });
+    refuse(cause);
+    return rejected;
+  };
 }
 
 function snapshot(
@@ -99,201 +119,304 @@ describe('requestedRunId', () => {
 });
 
 describe('IngestJob', () => {
-  it('watches nothing until a run is adopted', () => {
-    const { job } = createJob();
+  let job: IngestJob;
+  let connections: Map<string, TestConnection>;
 
-    expect(job.run).toBeNull();
-    expect(job.running).toBe(false);
-    expect(job.joined).toBe(false);
-    expect(job.streamLabel).toBe('idle');
-    expect(job.percentage).toBe(0);
+  describe('an ingest that has never triggered', () => {
+    beforeEach(() => {
+      ({ job, connections } = createJob());
+    });
+
+    it('watches no Job run', () => {
+      expect(job.run).toBeNull();
+    });
+
+    it('is not running', () => {
+      expect(job.running).toBe(false);
+    });
+
+    it('has joined nothing', () => {
+      expect(job.joined).toBe(false);
+    });
+
+    it('reports its stream idle', () => {
+      expect(job.streamLabel).toBe('idle');
+    });
+
+    it('reads no progress', () => {
+      expect(job.percentage).toBe(0);
+    });
+
+    it('is not triggering', () => {
+      expect(job.triggering).toBe(false);
+    });
+
+    it('has nothing to close when the screen goes away', () => {
+      job.close();
+
+      expect(connections.size).toBe(0);
+    });
   });
 
-  it('watches the run the server started', async () => {
-    const { job, connections } = createJob(() =>
-      Promise.resolve(started('run-1')),
-    );
-
-    await expect(job.trigger()).resolves.toBe('run-1');
-
-    expect(job.run?.correlationId).toBe('run-1');
-    expect(job.joined).toBe(false);
-    expect(connections.has('run-1')).toBe(true);
-  });
-
-  it('says so when the server handed back a run already in flight', async () => {
-    const { job } = createJob(() =>
-      Promise.resolve({ correlation_id: 'run-1', disposition: 'joined' }),
-    );
-
-    await job.trigger();
-
-    expect(job.joined).toBe(true);
-  });
-
-  it('drops the joined disposition once a later run replaces it', async () => {
-    const { job } = createJob(() =>
-      Promise.resolve({ correlation_id: 'run-1', disposition: 'joined' }),
-    );
-    await job.trigger();
-
-    job.follow('run-2');
-
-    expect(job.joined).toBe(false);
-  });
-
-  it('stays in flight until the server answers', async () => {
+  describe('an ingest whose trigger is in flight', () => {
     let answer: (payload: JobTriggerPayload) => void = () => {};
-    const { job } = createJob(
-      () =>
-        new Promise<JobTriggerPayload>((resolve) => {
-          answer = resolve;
-        }),
-    );
+    let triggering: Promise<string | null>;
 
-    const triggering = job.trigger();
-    expect(job.triggering).toBe(true);
+    beforeEach(() => {
+      ({ job, connections } = createJob(
+        () =>
+          new Promise<JobTriggerPayload>((resolve) => {
+            answer = resolve;
+          }),
+      ));
+      triggering = job.trigger();
+    });
 
-    answer(started('run-1'));
-    await triggering;
-    expect(job.triggering).toBe(false);
+    it('reports itself triggering', () => {
+      expect(job.triggering).toBe(true);
+    });
+
+    it('has adopted no Job run yet', () => {
+      expect(job.run).toBeNull();
+    });
+
+    it('stops triggering once the server answers', async () => {
+      answer(started('run-1'));
+      await triggering;
+
+      expect(job.triggering).toBe(false);
+    });
   });
 
-  it('reports the words a rejected trigger came with', async () => {
-    const { job } = createJob(() =>
-      Promise.reject(new Error('Ingestion is already running')),
-    );
+  describe('an ingest watching a Job run the server started', () => {
+    let adopted: string | null;
 
-    await expect(job.trigger()).resolves.toBeNull();
+    beforeEach(async () => {
+      ({ job, connections } = createJob(() =>
+        Promise.resolve(started('run-1')),
+      ));
+      adopted = await job.trigger();
+    });
 
-    expect(job.error).toBe('Ingestion is already running');
-    expect(job.run).toBeNull();
-    expect(job.triggering).toBe(false);
+    it('answers with the Job run it adopted', () => {
+      expect(adopted).toBe('run-1');
+    });
+
+    it('watches that Job run', () => {
+      expect(job.run?.correlationId).toBe('run-1');
+    });
+
+    it('opens a stream for it', () => {
+      expect(connections.has('run-1')).toBe(true);
+    });
+
+    it('joined nothing, the run being its own', () => {
+      expect(job.joined).toBe(false);
+    });
+
+    it('is running', () => {
+      expect(job.running).toBe(true);
+    });
   });
 
-  it('names itself when the trigger reports nothing legible', async () => {
+  describe('an ingest watching a Job run it joined', () => {
+    beforeEach(async () => {
+      ({ job, connections } = createJob(() =>
+        Promise.resolve(joinedRun('run-1')),
+      ));
+      await job.trigger();
+    });
+
+    it('says the run was already in flight', () => {
+      expect(job.joined).toBe(true);
+    });
+
+    it('still says so when told to follow the same run again', () => {
+      job.follow('run-1');
+
+      expect(job.joined).toBe(true);
+    });
+
+    it('drops the joined disposition once a later run replaces it', () => {
+      job.follow('run-2');
+
+      expect(job.joined).toBe(false);
+    });
+  });
+
+  describe('an ingest whose trigger was rejected', () => {
+    let adopted: string | null;
+
+    beforeEach(async () => {
+      let attempts = 0;
+      ({ job, connections } = createJob(() => {
+        attempts += 1;
+        return attempts === 1
+          ? Promise.reject(new Error('Ingestion is already running'))
+          : Promise.resolve(started('run-1'));
+      }));
+      adopted = await job.trigger();
+    });
+
+    it('answers with no Job run', () => {
+      expect(adopted).toBeNull();
+    });
+
+    it('adopts no Job run', () => {
+      expect(job.run).toBeNull();
+    });
+
+    it('stops triggering', () => {
+      expect(job.triggering).toBe(false);
+    });
+
+    it('reports the words the rejection came with', () => {
+      expect(job.error).toBe('Ingestion is already running');
+    });
+
+    it('clears the reported failure when the next trigger begins', async () => {
+      await job.trigger();
+
+      expect(job.error).toBe('');
+    });
+  });
+
+  describe('an ingest whose trigger was rejected illegibly', () => {
     // The client throws blank for a failure it cannot describe, and a message
     // of only whitespace is no more legible than none.
-    const { job } = createJob(() => Promise.reject(new Error('  ')));
+    it.each([
+      { cause: new Error('  ') },
+      { cause: new Error('') },
+      { cause: 'a rejection that is not an Error' },
+    ])('names itself, having no reason to pass on', async ({ cause }) => {
+      ({ job, connections } = createJob(rejectingTrigger(cause)));
 
-    await expect(job.trigger()).resolves.toBeNull();
+      await expect(job.trigger()).resolves.toBeNull();
 
-    expect(job.error).toBe(fallbackMessage);
+      expect(job.error).toBe(fallbackMessage);
+    });
   });
 
-  it('names itself when the trigger rejects with no Error at all', async () => {
-    let refuse: (cause: unknown) => void = () => {};
-    const { job } = createJob(
-      () =>
-        new Promise<JobTriggerPayload>((_, reject) => {
-          refuse = reject;
-        }),
+  describe('an ingest watching a Job run', () => {
+    beforeEach(() => {
+      ({ job, connections } = createJob());
+      job.follow('run-1');
+    });
+
+    it('watches the Job run it was named', () => {
+      expect(job.run?.correlationId).toBe('run-1');
+    });
+
+    it('opens no second stream when told to follow the same run', () => {
+      job.follow('run-1');
+
+      expect(connections.size).toBe(1);
+    });
+
+    it('leaves the open stream alone when told to follow the same run', () => {
+      job.follow('run-1');
+
+      expect(connections.get('run-1')?.closes).toBe(0);
+    });
+
+    it('closes the stream it leaves when it follows another run', () => {
+      job.follow('run-2');
+
+      expect(connections.get('run-1')?.closes).toBe(1);
+    });
+
+    it('watches the newer Job run when it follows another', () => {
+      job.follow('run-2');
+
+      expect(job.run?.correlationId).toBe('run-2');
+    });
+
+    it('rounds progress to whole percent of the files reported', () => {
+      connections
+        .get('run-1')
+        ?.dispatch('snapshot', snapshot({ files_done: 1, files_total: 3 }));
+
+      expect(job.percentage).toBe(33);
+    });
+
+    it('reads zero progress from a run with no files to divide by', () => {
+      connections
+        .get('run-1')
+        ?.dispatch('snapshot', snapshot({ files_done: 0, files_total: 0 }));
+
+      expect(job.percentage).toBe(0);
+    });
+
+    it.each(['connecting', 'live'] as const)(
+      'shows a stream state that needs no explaining in its own words',
+      (state) => {
+        connections.get('run-1')?.report(state);
+
+        expect(job.streamLabel).toBe(state);
+      },
     );
 
-    const triggering = job.trigger();
-    refuse('a rejection that is not an Error');
-    await triggering;
+    describe('whose stream dropped', () => {
+      beforeEach(() => {
+        connections.get('run-1')?.report('dropped');
+      });
 
-    expect(job.error).toBe(fallbackMessage);
-  });
+      it('says the drop is being retried', () => {
+        expect(job.streamLabel).toBe('dropped — retrying');
+      });
 
-  it('clears the last failure when the next trigger begins', async () => {
-    let attempts = 0;
-    const { job } = createJob(() => {
-      attempts += 1;
-      return attempts === 1
-        ? Promise.reject(new Error('Ingestion is already running'))
-        : Promise.resolve(started('run-1'));
-    });
-    await job.trigger();
-
-    await job.trigger();
-
-    expect(job.error).toBe('');
-  });
-
-  it('leaves an already-watched run connected', () => {
-    const { job, connections } = createJob();
-    job.follow('run-1');
-
-    job.follow('run-1');
-
-    expect(connections.size).toBe(1);
-    expect(connections.get('run-1')?.closes).toBe(0);
-  });
-
-  it('closes the run it leaves when it follows another', () => {
-    const { job, connections } = createJob();
-    job.follow('run-1');
-
-    job.follow('run-2');
-
-    expect(connections.get('run-1')?.closes).toBe(1);
-    expect(job.run?.correlationId).toBe('run-2');
-  });
-
-  it('rounds progress to whole percent of the files reported', () => {
-    const { job, connections } = createJob();
-    job.follow('run-1');
-
-    connections
-      .get('run-1')
-      ?.dispatch('snapshot', snapshot({ files_done: 1, files_total: 3 }));
-
-    expect(job.percentage).toBe(33);
-  });
-
-  it('reads zero progress from a run with no files to divide by', () => {
-    const { job, connections } = createJob();
-    job.follow('run-1');
-
-    connections
-      .get('run-1')
-      ?.dispatch('snapshot', snapshot({ files_done: 0, files_total: 0 }));
-
-    expect(job.percentage).toBe(0);
-  });
-
-  it('says a dropped stream is being retried', () => {
-    const { job, connections } = createJob();
-    job.follow('run-1');
-
-    connections.get('run-1')?.report('dropped');
-
-    expect(job.streamLabel).toBe('dropped — retrying');
-  });
-
-  it('says a stream that closed mid-run needs a reload', () => {
-    const { job, connections } = createJob();
-    job.follow('run-1');
-
-    connections.get('run-1')?.report('closed');
-
-    expect(job.streamLabel).toBe('closed — reload to reconnect');
-    expect(job.running).toBe(true);
-  });
-
-  it('names the stream state plainly once the run has finished', () => {
-    const { job, connections } = createJob();
-    job.follow('run-1');
-
-    connections.get('run-1')?.dispatch('done', {
-      correlation_id: 'run-1',
-      status: 'succeeded',
-      error: null,
-      timestamp: 2_000,
+      it('is still running, the Job run having no outcome', () => {
+        expect(job.running).toBe(true);
+      });
     });
 
-    expect(job.streamLabel).toBe('closed');
-    expect(job.running).toBe(false);
-  });
+    describe('whose stream closed before the Job run finished', () => {
+      beforeEach(() => {
+        connections.get('run-1')?.report('closed');
+      });
 
-  it('closes the run it was watching when the screen goes away', () => {
-    const { job, connections } = createJob();
-    job.follow('run-1');
+      it('says a reload is needed to reconnect', () => {
+        expect(job.streamLabel).toBe('closed — reload to reconnect');
+      });
 
-    job.close();
+      it('is still running, the Job run having no outcome', () => {
+        expect(job.running).toBe(true);
+      });
+    });
 
-    expect(connections.get('run-1')?.closes).toBe(1);
+    describe('whose Job run has finished', () => {
+      beforeEach(() => {
+        connections.get('run-1')?.dispatch('done', {
+          correlation_id: 'run-1',
+          status: 'succeeded',
+          error: null,
+          timestamp: 2_000,
+        });
+      });
+
+      it('names the close plainly, there being nothing to reconnect', () => {
+        expect(job.streamLabel).toBe('closed');
+      });
+
+      it('is no longer running', () => {
+        expect(job.running).toBe(false);
+      });
+    });
+
+    describe('torn down with the screen', () => {
+      beforeEach(() => {
+        job.close();
+      });
+
+      it('closes the stream it was watching', () => {
+        expect(connections.get('run-1')?.closes).toBe(1);
+      });
+
+      it('closes that stream once, however often it is torn down', () => {
+        job.close();
+
+        expect(connections.get('run-1')?.closes).toBe(1);
+      });
+    });
   });
 });

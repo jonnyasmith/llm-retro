@@ -1,8 +1,9 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
-import { openDatabase, type Database } from './connection';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { openDatabase, type Connection, type Database } from './connection';
+import { IngestionActiveError } from '../settings/errors';
 import { interactions, jobRuns, projects, sessions, settings } from './schema';
 import {
   getActivityHeatmap,
@@ -17,15 +18,22 @@ import {
   persistSettings,
 } from './store';
 
-const temporaryDirectories: string[] = [];
+let dataDirectory!: string;
+let connection!: Connection;
+let database!: Database;
 
-async function createDatabase() {
-  const dataDirectory = await mkdtemp(join(tmpdir(), 'llm-retro-store-'));
-  temporaryDirectories.push(dataDirectory);
-  return openDatabase({ LLM_RETRO_DATA_DIR: dataDirectory });
-}
+beforeEach(async () => {
+  dataDirectory = await mkdtemp(join(tmpdir(), 'llm-retro-store-'));
+  connection = openDatabase({ LLM_RETRO_DATA_DIR: dataDirectory });
+  database = connection.database;
+});
 
-async function createSessionFixture(database: Database) {
+afterEach(async () => {
+  connection.close();
+  await rm(dataDirectory, { recursive: true, force: true });
+});
+
+function createSessionFixture() {
   const [project] = database
     .insert(projects)
     .values({ rootPath: '/work/llm-retro', gitRemoteUrl: 'git@example/repo' })
@@ -45,10 +53,7 @@ async function createSessionFixture(database: Database) {
   return { project, session };
 }
 
-function seedInteraction(
-  database: Database,
-  interaction: typeof interactions.$inferInsert,
-) {
+function seedInteraction(interaction: typeof interactions.$inferInsert) {
   const [stored] = database
     .insert(interactions)
     .values(interaction)
@@ -58,23 +63,27 @@ function seedInteraction(
   return stored;
 }
 
-afterEach(async () => {
-  await Promise.all(
-    temporaryDirectories
-      .splice(0)
-      .map((directory) => rm(directory, { recursive: true, force: true })),
-  );
-});
+describe('analytical Store', () => {
+  describe('holding no Interactions', () => {
+    it('counts no Interactions', () => {
+      expect(getOverviewTotals(database).interactionCount).toBe(0);
+    });
 
-describe('analytical store', () => {
-  it('round-trips absent token buckets distinctly from genuine zero', async () => {
-    const connection = await createDatabase();
+    it('totals its tokens as a genuine zero rather than an absence', () => {
+      expect(getOverviewTotals(database).totalTokens).toBe(0);
+    });
 
-    try {
-      const { project, session } = await createSessionFixture(
-        connection.database,
-      );
-      const stored = seedInteraction(connection.database, {
+    it('reports an empty activity heatmap', () => {
+      expect(getActivityHeatmap(database)).toEqual([]);
+    });
+  });
+
+  describe('holding an Interaction that reports only some token buckets', () => {
+    let stored!: typeof interactions.$inferSelect;
+
+    beforeEach(() => {
+      const { project, session } = createSessionFixture();
+      stored = seedInteraction({
         sessionId: session.id,
         interactionKey: 'record-1',
         harness: 'codex',
@@ -88,22 +97,24 @@ describe('analytical store', () => {
         localHour: 0,
         localDate: '1970-01-01',
       });
+    });
 
+    it('retains a reported zero bucket as a zero', () => {
       expect(stored.mainInputTokens).toBe(0);
+    });
+
+    it('retains an explicitly absent bucket as absent', () => {
       expect(stored.mainOutputTokens).toBeNull();
+    });
+
+    it('records an unmentioned bucket as absent', () => {
       expect(stored.subInputTokens).toBeNull();
-    } finally {
-      connection.close();
-    }
+    });
   });
 
-  it('aggregates Interaction and complete main-plus-sub token totals', async () => {
-    const connection = await createDatabase();
-
-    try {
-      const { project, session } = await createSessionFixture(
-        connection.database,
-      );
+  describe('holding Interactions spread over several local buckets', () => {
+    beforeEach(() => {
+      const { project, session } = createSessionFixture();
       const facts = [
         {
           interactionKey: 'record-1',
@@ -149,7 +160,7 @@ describe('analytical store', () => {
         },
       ] as const;
       for (const [index, fact] of facts.entries()) {
-        seedInteraction(connection.database, {
+        seedInteraction({
           sessionId: session.id,
           harness: 'codex',
           projectId: project.id,
@@ -159,45 +170,57 @@ describe('analytical store', () => {
           ...fact,
         });
       }
+    });
 
-      expect(getOverviewTotals(connection.database)).toEqual({
-        interactionCount: 3,
-        totalTokens: 192,
+    it('counts every Interaction it holds', () => {
+      expect(getOverviewTotals(database).interactionCount).toBe(3);
+    });
+
+    it('totals the reported main and sub token buckets of every Interaction', () => {
+      expect(getOverviewTotals(database).totalTokens).toBe(192);
+    });
+
+    it('counts the Interactions sharing a local day and hour as one heatmap bucket', () => {
+      expect(getActivityHeatmap(database)).toContainEqual({
+        localDow: 1,
+        localHour: 9,
+        interactionCount: 2,
       });
-      expect(getActivityHeatmap(connection.database)).toEqual([
-        { localDow: 1, localHour: 9, interactionCount: 2 },
-        { localDow: 6, localHour: 23, interactionCount: 1 },
+      expect(getActivityHeatmap(database)).toContainEqual({
+        localDow: 6,
+        localHour: 23,
+        interactionCount: 1,
+      });
+    });
+
+    it('orders the heatmap buckets by local day then local hour', () => {
+      expect(
+        getActivityHeatmap(database).map((bucket) => [
+          bucket.localDow,
+          bucket.localHour,
+        ]),
+      ).toEqual([
+        [1, 9],
+        [6, 23],
       ]);
-    } finally {
-      connection.close();
-    }
+    });
   });
 
-  it('returns explicit zero analytics for an empty Interaction store', async () => {
-    const connection = await createDatabase();
+  describe('holding Job runs of more than one identity', () => {
+    const finishedIngest = '11111111-1111-4111-8111-111111111111';
+    const unrelatedRun = '22222222-2222-4222-8222-222222222222';
+    const runningIngest = '33333333-3333-4333-8333-333333333333';
+    const ingestHistory = () =>
+      listJobRuns(database, { type: 'ingest', scope: 'claude' });
 
-    try {
-      expect(getOverviewTotals(connection.database)).toEqual({
-        interactionCount: 0,
-        totalTokens: 0,
-      });
-      expect(getActivityHeatmap(connection.database)).toEqual([]);
-    } finally {
-      connection.close();
-    }
-  });
-
-  it('reads harness-scoped Job run history newest-first with timing', async () => {
-    const connection = await createDatabase();
-
-    try {
-      connection.database
+    beforeEach(() => {
+      database
         .insert(jobRuns)
         .values([
           {
             type: 'ingest',
             scope: 'claude',
-            correlationId: '11111111-1111-4111-8111-111111111111',
+            correlationId: finishedIngest,
             status: 'succeeded',
             startedAt: 100,
             finishedAt: 150,
@@ -207,7 +230,7 @@ describe('analytical store', () => {
           {
             type: 'stub',
             scope: '',
-            correlationId: '22222222-2222-4222-8222-222222222222',
+            correlationId: unrelatedRun,
             status: 'succeeded',
             startedAt: 200,
             finishedAt: 250,
@@ -215,7 +238,7 @@ describe('analytical store', () => {
           {
             type: 'ingest',
             scope: 'claude',
-            correlationId: '33333333-3333-4333-8333-333333333333',
+            correlationId: runningIngest,
             status: 'running',
             startedAt: 300,
             filesTotal: 8,
@@ -223,105 +246,150 @@ describe('analytical store', () => {
           },
         ])
         .run();
+    });
 
-      expect(
-        listJobRuns(connection.database, {
-          type: 'ingest',
-          scope: 'claude',
-        }),
-      ).toEqual([
-        expect.objectContaining({
-          correlationId: '33333333-3333-4333-8333-333333333333',
-          status: 'running',
-          startedAt: 300,
-          finishedAt: null,
-          filesTotal: 8,
-          filesDone: 3,
-        }),
-        expect.objectContaining({
-          correlationId: '11111111-1111-4111-8111-111111111111',
-          status: 'succeeded',
-          startedAt: 100,
-          finishedAt: 150,
-          filesTotal: 4,
-          filesDone: 4,
-        }),
+    it('returns only the Job runs of the requested type and scope', () => {
+      const history = ingestHistory();
+
+      expect(history).toHaveLength(2);
+      expect(history.map((run) => run.correlationId)).not.toContain(
+        unrelatedRun,
+      );
+    });
+
+    it('returns the matching Job runs newest first', () => {
+      expect(ingestHistory().map((run) => run.correlationId)).toEqual([
+        runningIngest,
+        finishedIngest,
       ]);
-    } finally {
-      connection.close();
-    }
+    });
+
+    it('reports the timing and per-file progress of a finished Job run', () => {
+      expect(
+        ingestHistory().find((run) => run.correlationId === finishedIngest),
+      ).toMatchObject({
+        status: 'succeeded',
+        startedAt: 100,
+        finishedAt: 150,
+        filesTotal: 4,
+        filesDone: 4,
+      });
+    });
+
+    it('reports a running Job run as unfinished with the progress so far', () => {
+      expect(
+        ingestHistory().find((run) => run.correlationId === runningIngest),
+      ).toMatchObject({
+        status: 'running',
+        startedAt: 300,
+        finishedAt: null,
+        filesTotal: 8,
+        filesDone: 3,
+      });
+    });
   });
 
-  it('applies OS-derived settings defaults until preferences are overridden', async () => {
-    const connection = await createDatabase();
+  describe('holding no stored Settings', () => {
+    const operatingSystemTimezone = () => 'Europe/London';
 
-    try {
-      expect(getSettings(connection.database, () => 'Europe/London')).toEqual({
-        timezone: 'Europe/London',
+    it('falls back to the operating system timezone', () => {
+      expect(getSettings(database, operatingSystemTimezone).timezone).toBe(
+        'Europe/London',
+      );
+    });
+
+    it('leaves raw archiving off with no archive path', () => {
+      expect(getSettings(database, operatingSystemTimezone)).toMatchObject({
         rawArchiveEnabled: false,
         rawArchivePath: null,
+      });
+    });
+
+    it('reports the conventional Harness log sources and no overrides', () => {
+      expect(getSettings(database, operatingSystemTimezone)).toMatchObject({
         logSourceOverrides: {},
         logSources: resolveDefaultLogSources(),
       });
-      expect(connection.database.select().from(settings).all()).toHaveLength(0);
+    });
 
-      persistSettings(connection.database, {
-        timezone: 'Asia/Kolkata',
-        rawArchiveEnabled: true,
-        rawArchivePath: '/archive',
-        logSourceOverrides: { codex: ['/logs/codex'] },
-      });
+    it('reads its defaults without writing a Settings row', () => {
+      getSettings(database, operatingSystemTimezone);
 
-      expect(getSettings(connection.database)).toEqual({
-        timezone: 'Asia/Kolkata',
-        rawArchiveEnabled: true,
-        rawArchivePath: '/archive',
-        logSourceOverrides: { codex: ['/logs/codex'] },
-        logSources: {
-          ...resolveDefaultLogSources(),
-          codex: ['/logs/codex'],
-        },
-      });
-
-      persistSettings(connection.database, {
-        rawArchiveEnabled: false,
-        rawArchivePath: null,
-      });
-      expect(getSettings(connection.database)).toMatchObject({
-        rawArchiveEnabled: false,
-        rawArchivePath: null,
-      });
-    } finally {
-      connection.close();
-    }
+      expect(database.select().from(settings).all()).toHaveLength(0);
+    });
   });
 
-  it('merges partial log-source overrides with conventional Harness paths', async () => {
-    const connection = await createDatabase();
+  describe('holding Settings that override every preference', () => {
+    beforeEach(() => {
+      persistSettings(database, {
+        timezone: 'Asia/Kolkata',
+        rawArchiveEnabled: true,
+        rawArchivePath: '/archive',
+        logSourceOverrides: { codex: ['/logs/codex'] },
+      });
+    });
 
-    try {
-      persistSettings(connection.database, {
-        logSourceOverrides: { claude: ['/external/claude'] },
+    it('reports the stored timezone in place of the operating system one', () => {
+      expect(getSettings(database).timezone).toBe('Asia/Kolkata');
+    });
+
+    it('reports the stored raw archive preference and path', () => {
+      expect(getSettings(database)).toMatchObject({
+        rawArchiveEnabled: true,
+        rawArchivePath: '/archive',
+      });
+    });
+
+    it('reports the stored log source overrides', () => {
+      expect(getSettings(database).logSourceOverrides).toEqual({
+        codex: ['/logs/codex'],
+      });
+    });
+
+    it('layers the stored overrides over the conventional Harness paths', () => {
+      expect(getSettings(database).logSources).toEqual({
+        ...resolveDefaultLogSources(),
+        codex: ['/logs/codex'],
+      });
+    });
+
+    it('overwrites the preferences a later partial change names', () => {
+      persistSettings(database, {
+        rawArchiveEnabled: false,
+        rawArchivePath: null,
       });
 
-      expect(getSettings(connection.database).logSources).toEqual({
+      expect(getSettings(database)).toMatchObject({
+        rawArchiveEnabled: false,
+        rawArchivePath: null,
+      });
+    });
+  });
+
+  describe('holding a log source override for one Harness', () => {
+    beforeEach(() => {
+      persistSettings(database, {
+        logSourceOverrides: { claude: ['/external/claude'] },
+      });
+    });
+
+    it('replaces the paths of the overridden Harness alone', () => {
+      expect(getSettings(database).logSources).toEqual({
         ...resolveDefaultLogSources(),
         claude: ['/external/claude'],
       });
-    } finally {
-      connection.close();
-    }
+    });
   });
 
-  it('rolls back bucket changes when the timezone setting cannot be stored', async () => {
-    const connection = await createDatabase();
+  describe('holding an Interaction bucketed in the stored timezone', () => {
+    const moveTimezone = () =>
+      persistSettings(database, { timezone: 'Asia/Kolkata' });
+    const storedInteraction = () => database.select().from(interactions).get();
 
-    try {
-      persistSettings(connection.database, { timezone: 'Europe/London' });
-      const { project, session } = await createSessionFixture(
-        connection.database,
-      );
-      seedInteraction(connection.database, {
+    beforeEach(() => {
+      persistSettings(database, { timezone: 'Europe/London' });
+      const { project, session } = createSessionFixture();
+      seedInteraction({
         sessionId: session.id,
         interactionKey: 'record-1',
         harness: 'codex',
@@ -333,73 +401,92 @@ describe('analytical store', () => {
         localHour: 20,
         localDate: '2025-01-01',
       });
-      connection.unsafeSqlite.exec(`
-        create trigger reject_timezone_update
-        before update on settings
-        begin
-          select raise(abort, 'settings update rejected');
-        end;
-      `);
+    });
 
-      expect(() =>
-        persistSettings(connection.database, { timezone: 'Asia/Kolkata' }),
-      ).toThrow(/settings update rejected/);
-      expect(getSettings(connection.database).timezone).toBe('Europe/London');
-      expect(
-        connection.database.select().from(interactions).get(),
-      ).toMatchObject({
-        localDow: 3,
-        localHour: 20,
-        localDate: '2025-01-01',
-      });
-    } finally {
-      connection.close();
-    }
-  });
+    it('recomputes every local bucket from the stored UTC instant when the timezone moves', () => {
+      moveTimezone();
 
-  it('recomputes every local bucket from stored UTC when timezone changes', async () => {
-    const connection = await createDatabase();
-
-    try {
-      const { project, session } = await createSessionFixture(
-        connection.database,
-      );
-      seedInteraction(connection.database, {
-        sessionId: session.id,
-        interactionKey: 'record-1',
-        harness: 'codex',
-        projectId: project.id,
-        model: 'gpt-5',
-        modelRaw: 'gpt-5',
-        timestamp: Date.parse('2025-01-01T20:00:00.000Z'),
-        localDow: 3,
-        localHour: 20,
-        localDate: '2025-01-01',
-      });
-
-      persistSettings(connection.database, { timezone: 'Asia/Kolkata' });
-      expect(
-        connection.database.select().from(interactions).get(),
-      ).toMatchObject({
+      expect(storedInteraction()).toMatchObject({
         timestamp: Date.parse('2025-01-01T20:00:00.000Z'),
         localDow: 4,
         localHour: 1,
         localDate: '2025-01-02',
       });
-    } finally {
-      connection.close();
-    }
+    });
+
+    describe('whose Settings row rejects the write', () => {
+      beforeEach(() => {
+        connection.unsafeSqlite.exec(`
+          create trigger reject_timezone_update
+          before update on settings
+          begin
+            select raise(abort, 'settings update rejected');
+          end;
+        `);
+      });
+
+      it('reports the rejection to the caller', () => {
+        expect(moveTimezone).toThrow(/settings update rejected/);
+      });
+
+      it('leaves the stored timezone unchanged', () => {
+        expect(moveTimezone).toThrow();
+
+        expect(getSettings(database).timezone).toBe('Europe/London');
+      });
+
+      it('leaves every local bucket unchanged', () => {
+        expect(moveTimezone).toThrow();
+
+        expect(storedInteraction()).toMatchObject({
+          localDow: 3,
+          localHour: 20,
+          localDate: '2025-01-01',
+        });
+      });
+    });
+
+    describe('while an ingest Job run is running', () => {
+      beforeEach(() => {
+        database
+          .insert(jobRuns)
+          .values({
+            type: 'ingest',
+            scope: 'codex',
+            correlationId: '44444444-4444-4444-8444-444444444444',
+            status: 'running',
+            startedAt: 400,
+          })
+          .run();
+      });
+
+      it('refuses to move the timezone under the running ingest', () => {
+        expect(moveTimezone).toThrow(IngestionActiveError);
+      });
+
+      it('leaves every local bucket unchanged', () => {
+        expect(moveTimezone).toThrow();
+
+        expect(storedInteraction()).toMatchObject({
+          localDow: 3,
+          localHour: 20,
+          localDate: '2025-01-01',
+        });
+      });
+
+      it('accepts a change that leaves the timezone where it is', () => {
+        persistSettings(database, { rawArchiveEnabled: true });
+
+        expect(getSettings(database).rawArchiveEnabled).toBe(true);
+      });
+    });
   });
 });
 
 describe('categorical breakdowns', () => {
-  it('aggregates a token bucket to null only when every contributor is null', async () => {
-    const connection = await createDatabase();
-
-    try {
-      const { project, session } = await createSessionFixture(
-        connection.database,
-      );
+  describe('over Interactions whose token buckets are partly absent', () => {
+    beforeEach(() => {
+      const { project, session } = createSessionFixture();
       const base = {
         sessionId: session.id,
         harness: 'codex',
@@ -410,7 +497,7 @@ describe('categorical breakdowns', () => {
         localHour: 0,
         localDate: '1970-01-01',
       } as const;
-      seedInteraction(connection.database, {
+      seedInteraction({
         ...base,
         interactionKey: 'record-1',
         timestamp: 0,
@@ -419,7 +506,7 @@ describe('categorical breakdowns', () => {
         mainCacheWriteTokens: null,
         subCacheWriteTokens: null,
       });
-      seedInteraction(connection.database, {
+      seedInteraction({
         ...base,
         interactionKey: 'record-2',
         timestamp: 1,
@@ -428,27 +515,43 @@ describe('categorical breakdowns', () => {
         mainCacheWriteTokens: null,
         subCacheWriteTokens: null,
       });
+    });
 
-      const [harness] = getHarnessBreakdown(connection.database);
-      expect(harness).toMatchObject({
-        harness: 'codex',
-        interactionCount: 2,
-        inputTokens: 15,
-        outputTokens: null,
-        cacheWriteTokens: null,
-        totalTokens: 15,
-      });
-    } finally {
-      connection.close();
-    }
+    it('groups the Interactions under the Harness that ran them', () => {
+      const [harness] = getHarnessBreakdown(database);
+
+      expect(harness).toMatchObject({ harness: 'codex', interactionCount: 2 });
+    });
+
+    it('sums a bucket over the Interactions that report it', () => {
+      const [harness] = getHarnessBreakdown(database);
+
+      expect(harness.inputTokens).toBe(15);
+    });
+
+    it.each([
+      { bucket: 'outputTokens' as const },
+      { bucket: 'cacheWriteTokens' as const },
+    ])(
+      'reports the $bucket bucket as absent when every Interaction leaves it absent',
+      ({ bucket }) => {
+        const [harness] = getHarnessBreakdown(database);
+
+        expect(harness[bucket]).toBeNull();
+      },
+    );
+
+    it('totals only the buckets the Interactions report', () => {
+      const [harness] = getHarnessBreakdown(database);
+
+      expect(harness.totalTokens).toBe(15);
+    });
   });
 
-  it('sums a canonical Model across Harnesses and derives its Provider', async () => {
-    const connection = await createDatabase();
-
-    try {
-      const { project } = await createSessionFixture(connection.database);
-      const [claudeSession] = connection.database
+  describe('over one Model run under several Harnesses', () => {
+    beforeEach(() => {
+      const { project } = createSessionFixture();
+      const [claudeSession] = database
         .insert(sessions)
         .values({
           harness: 'claude',
@@ -458,7 +561,7 @@ describe('categorical breakdowns', () => {
         })
         .returning()
         .all();
-      const [piSession] = connection.database
+      const [piSession] = database
         .insert(sessions)
         .values({
           harness: 'pi',
@@ -469,7 +572,7 @@ describe('categorical breakdowns', () => {
         .returning()
         .all();
 
-      seedInteraction(connection.database, {
+      seedInteraction({
         sessionId: claudeSession.id,
         interactionKey: 'claude-record',
         harness: 'claude',
@@ -482,7 +585,7 @@ describe('categorical breakdowns', () => {
         localHour: 0,
         localDate: '1970-01-01',
       });
-      seedInteraction(connection.database, {
+      seedInteraction({
         sessionId: piSession.id,
         interactionKey: 'pi-record',
         harness: 'pi',
@@ -495,34 +598,43 @@ describe('categorical breakdowns', () => {
         localHour: 0,
         localDate: '1970-01-01',
       });
+    });
 
-      expect(getModelBreakdown(connection.database)).toEqual([
-        expect.objectContaining({
-          model: 'claude-opus-4-8',
-          provider: 'anthropic',
-          interactionCount: 2,
-          inputTokens: 7,
-        }),
+    it('collapses the canonical Model into a single row', () => {
+      expect(getModelBreakdown(database).map((row) => row.model)).toEqual([
+        'claude-opus-4-8',
       ]);
-    } finally {
-      connection.close();
-    }
+    });
+
+    it('counts the Interactions of the Model across the Harnesses that ran it', () => {
+      const [model] = getModelBreakdown(database);
+
+      expect(model.interactionCount).toBe(2);
+    });
+
+    it('sums the token buckets of the Model across the Harnesses that ran it', () => {
+      const [model] = getModelBreakdown(database);
+
+      expect(model.inputTokens).toBe(7);
+    });
+
+    it('derives the Provider of the Model', () => {
+      const [model] = getModelBreakdown(database);
+
+      expect(model.provider).toBe('anthropic');
+    });
   });
 
-  it('attributes Interaction counts to each Interaction own Project', async () => {
-    const connection = await createDatabase();
-
-    try {
-      const { project: alpha, session } = await createSessionFixture(
-        connection.database,
-      );
-      const [beta] = connection.database
+  describe('over Interactions attributed to more than one Project', () => {
+    beforeEach(() => {
+      const { project: alpha, session } = createSessionFixture();
+      const [beta] = database
         .insert(projects)
         .values({ rootPath: '/work/beta', gitRemoteUrl: null })
         .returning()
         .all();
 
-      seedInteraction(connection.database, {
+      seedInteraction({
         sessionId: session.id,
         interactionKey: 'alpha-record',
         harness: 'codex',
@@ -534,7 +646,7 @@ describe('categorical breakdowns', () => {
         localHour: 0,
         localDate: '1970-01-01',
       });
-      seedInteraction(connection.database, {
+      seedInteraction({
         sessionId: session.id,
         interactionKey: 'beta-record',
         harness: 'codex',
@@ -546,27 +658,31 @@ describe('categorical breakdowns', () => {
         localHour: 0,
         localDate: '1970-01-01',
       });
+    });
 
+    it('counts each Interaction against its own Project rather than its Session', () => {
       expect(
-        getProjectBreakdown(connection.database).map((row) => ({
-          rootPath: row.rootPath,
-          interactionCount: row.interactionCount,
-        })),
-      ).toEqual([
-        { rootPath: '/work/beta', interactionCount: 1 },
-        { rootPath: '/work/llm-retro', interactionCount: 1 },
+        Object.fromEntries(
+          getProjectBreakdown(database).map((row) => [
+            row.rootPath,
+            row.interactionCount,
+          ]),
+        ),
+      ).toEqual({ '/work/beta': 1, '/work/llm-retro': 1 });
+    });
+
+    it('orders equally busy Projects by root path', () => {
+      expect(getProjectBreakdown(database).map((row) => row.rootPath)).toEqual([
+        '/work/beta',
+        '/work/llm-retro',
       ]);
-    } finally {
-      connection.close();
-    }
+    });
   });
 
-  it('averages Session duration over measurable Sessions and discloses exclusions', async () => {
-    const connection = await createDatabase();
-
-    try {
-      const { project } = await createSessionFixture(connection.database);
-      connection.database
+  describe('over Sessions of which only some have a measurable duration', () => {
+    beforeEach(() => {
+      const { project } = createSessionFixture();
+      database
         .insert(sessions)
         .values([
           {
@@ -601,41 +717,62 @@ describe('categorical breakdowns', () => {
           },
         ])
         .run();
+    });
 
-      const shape = getSessionShape(connection.database);
-      expect(shape.totals).toMatchObject({
-        sessionCount: 5,
-        averageDurationMs: 2000,
-        durationExcluded: 3,
-      });
-      expect(shape.byHarness).toEqual([
-        expect.objectContaining({
-          harness: 'codex',
-          sessionCount: 4,
-          averageDurationMs: 1000,
-          durationExcluded: 3,
-        }),
-        expect.objectContaining({
-          harness: 'claude',
-          sessionCount: 1,
-          averageDurationMs: 3000,
-          durationExcluded: 0,
-        }),
+    it('counts every Session it holds', () => {
+      expect(getSessionShape(database).totals.sessionCount).toBe(5);
+    });
+
+    it('averages the duration of the measurable Sessions alone', () => {
+      expect(getSessionShape(database).totals.averageDurationMs).toBe(2000);
+    });
+
+    it('discloses how many Sessions it could not measure', () => {
+      expect(getSessionShape(database).totals.durationExcluded).toBe(3);
+    });
+
+    it('counts the Sessions of each Harness, most numerous first', () => {
+      expect(
+        getSessionShape(database).byHarness.map((row) => [
+          row.harness,
+          row.sessionCount,
+        ]),
+      ).toEqual([
+        ['codex', 4],
+        ['claude', 1],
       ]);
-    } finally {
-      connection.close();
-    }
+    });
+
+    it('averages the duration of the measurable Sessions within each Harness', () => {
+      expect(
+        getSessionShape(database).byHarness.map((row) => [
+          row.harness,
+          row.averageDurationMs,
+        ]),
+      ).toEqual([
+        ['codex', 1000],
+        ['claude', 3000],
+      ]);
+    });
+
+    it('discloses the unmeasurable Sessions of each Harness', () => {
+      expect(
+        getSessionShape(database).byHarness.map((row) => [
+          row.harness,
+          row.durationExcluded,
+        ]),
+      ).toEqual([
+        ['codex', 3],
+        ['claude', 0],
+      ]);
+    });
   });
 
-  it('averages Interactions per Session from the seeded rows', async () => {
-    const connection = await createDatabase();
-
-    try {
-      const { project, session } = await createSessionFixture(
-        connection.database,
-      );
+  describe('over one Session holding several Interactions', () => {
+    beforeEach(() => {
+      const { project, session } = createSessionFixture();
       for (const key of ['a', 'b', 'c']) {
-        seedInteraction(connection.database, {
+        seedInteraction({
           sessionId: session.id,
           interactionKey: key,
           harness: 'codex',
@@ -648,15 +785,17 @@ describe('categorical breakdowns', () => {
           localDate: '1970-01-01',
         });
       }
+    });
 
-      const shape = getSessionShape(connection.database);
-      expect(shape.totals).toMatchObject({
+    it('counts every Interaction across its Sessions', () => {
+      expect(getSessionShape(database).totals.interactionCount).toBe(3);
+    });
+
+    it('averages its Interactions over the Sessions holding them', () => {
+      expect(getSessionShape(database).totals).toMatchObject({
         sessionCount: 1,
-        interactionCount: 3,
         averageInteractionsPerSession: 3,
       });
-    } finally {
-      connection.close();
-    }
+    });
   });
 });

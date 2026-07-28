@@ -8,10 +8,12 @@ import {
 } from './format';
 
 describe('formatCount', () => {
-  it('groups thousands in the UK convention', () => {
-    expect(formatCount(1234567)).toEqual('1,234,567');
-    expect(formatCount(1000)).toEqual('1,000');
-    expect(formatCount(999)).toEqual('999');
+  it.each([
+    [1234567, '1,234,567'],
+    [1000, '1,000'],
+    [999, '999'],
+  ])('groups thousands in the UK convention', (count, expected) => {
+    expect(formatCount(count)).toEqual(expected);
   });
 
   it('renders a zero count as zero', () => {
@@ -20,14 +22,19 @@ describe('formatCount', () => {
 });
 
 describe('formatAverage', () => {
-  it('groups thousands and keeps at most one fraction digit', () => {
+  it('groups thousands in the UK convention', () => {
     expect(formatAverage(12345.678)).toEqual('12,345.7');
+  });
+
+  it('keeps at most one fraction digit', () => {
     expect(formatAverage(2.25)).toEqual('2.3');
   });
 
-  it('drops the fraction when it rounds away', () => {
-    expect(formatAverage(4.04)).toEqual('4');
-    expect(formatAverage(3)).toEqual('3');
+  it.each([
+    [4.04, '4'],
+    [3, '3'],
+  ])('drops the fraction when it rounds away', (average, expected) => {
+    expect(formatAverage(average)).toEqual(expected);
   });
 });
 
@@ -36,29 +43,41 @@ describe('formatTokens', () => {
     expect(formatTokens(1234567)).toEqual('1,234,567');
   });
 
-  it('renders an unreported bucket as an em dash rather than zero', () => {
+  it('renders an unreported bucket as an em dash', () => {
     expect(formatTokens(null)).toEqual('—');
+  });
+
+  it('renders a genuinely reported zero as zero', () => {
     expect(formatTokens(0)).toEqual('0');
   });
 });
 
 describe('formatDuration', () => {
-  it('keeps millisecond precision below a second', () => {
-    expect(formatDuration(0)).toEqual('0 ms');
-    expect(formatDuration(120)).toEqual('120 ms');
-    expect(formatDuration(999)).toEqual('999 ms');
+  it.each([
+    [0, '0 ms'],
+    [120, '120 ms'],
+    [999, '999 ms'],
+  ])('keeps millisecond precision below a second', (duration, expected) => {
+    expect(formatDuration(duration)).toEqual(expected);
   });
 
-  it('switches to seconds with one fraction digit at a second', () => {
-    expect(formatDuration(1000)).toEqual('1.0 s');
-    expect(formatDuration(1500)).toEqual('1.5 s');
-    expect(formatDuration(59_999)).toEqual('60.0 s');
-  });
+  it.each([
+    [1000, '1.0 s'],
+    [1500, '1.5 s'],
+    [59_999, '60.0 s'],
+  ])(
+    'switches to seconds with one fraction digit at a second',
+    (duration, expected) => {
+      expect(formatDuration(duration)).toEqual(expected);
+    },
+  );
 
-  it('switches to minutes and seconds at a minute', () => {
-    expect(formatDuration(60_000)).toEqual('1m 0s');
-    expect(formatDuration(180_000)).toEqual('3m 0s');
-    expect(formatDuration(200_000)).toEqual('3m 20s');
+  it.each([
+    [60_000, '1m 0s'],
+    [180_000, '3m 0s'],
+    [200_000, '3m 20s'],
+  ])('switches to minutes and seconds at a minute', (duration, expected) => {
+    expect(formatDuration(duration)).toEqual(expected);
   });
 
   it('renders an absent duration as an em dash rather than zero', () => {
@@ -67,14 +86,15 @@ describe('formatDuration', () => {
 });
 
 describe('formatUtcTimestamp', () => {
-  it('discards the milliseconds a clock-derived instant carries', () => {
-    expect(formatUtcTimestamp(Date.parse('2026-07-25T12:00:00.123Z'))).toEqual(
-      '2026-07-25 12:00:00 UTC',
-    );
-    expect(formatUtcTimestamp(Date.parse('2026-07-25T23:59:59.999Z'))).toEqual(
-      '2026-07-25 23:59:59 UTC',
-    );
-  });
+  it.each([
+    ['2026-07-25T12:00:00.123Z', '2026-07-25 12:00:00 UTC'],
+    ['2026-07-25T23:59:59.999Z', '2026-07-25 23:59:59 UTC'],
+  ])(
+    'discards the milliseconds a clock-derived instant carries',
+    (instant, expected) => {
+      expect(formatUtcTimestamp(Date.parse(instant))).toEqual(expected);
+    },
+  );
 
   it('renders an instant on an exact second identically', () => {
     expect(formatUtcTimestamp(Date.parse('2026-07-25T12:00:00.000Z'))).toEqual(
