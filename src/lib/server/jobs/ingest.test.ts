@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { harnesses, type Harness } from '../../jobs/contracts';
 import type { Database } from '../database/connection';
 import { interactions, sessions } from '../database/schema';
@@ -8,6 +8,7 @@ import {
   createIngestFixture,
   sessionGrowthScenarios,
   writeJsonLines,
+  type IngestFixture,
 } from './ingest-fixture';
 import { createIngestHandler } from './ingest-pipeline';
 import { ingestAdapters } from './ingest-registry';
@@ -37,18 +38,27 @@ const run = (harness: Harness, database: Database, correlationId: string) =>
 afterEach(cleanupIngestFixtures);
 
 describe.each(harnesses)('%s ingest', (harness) => {
-  it('stores the Session and every Interaction its log records', async () => {
-    const scenario = sessionGrowthScenarios[harness](STABLE_SESSION_ID);
-    const fixture = await createIngestFixture(harness);
-    const sessionPath = fixture.sessionPath(STABLE_SESSION_ID);
-    await writeJsonLines(sessionPath, [
-      ...scenario.initialRecords,
-      ...scenario.appendedRecords,
-    ]);
+  const scenario = sessionGrowthScenarios[harness](STABLE_SESSION_ID);
 
-    try {
+  describe('a Session log read in one pass', () => {
+    let fixture: IngestFixture;
+    let sessionPath: string;
+
+    beforeEach(async () => {
+      fixture = await createIngestFixture(harness);
+      sessionPath = fixture.sessionPath(STABLE_SESSION_ID);
+      await writeJsonLines(sessionPath, [
+        ...scenario.initialRecords,
+        ...scenario.appendedRecords,
+      ]);
       await run(harness, fixture.database, 'first-ingest');
+    });
 
+    afterEach(() => {
+      fixture.close();
+    });
+
+    it('stores the Session against the log file it was read from', () => {
       expect(fixture.database.select().from(sessions).all()).toEqual([
         expect.objectContaining({
           harness,
@@ -56,24 +66,27 @@ describe.each(harnesses)('%s ingest', (harness) => {
           logFilePath: sessionPath,
         }),
       ]);
+    });
+
+    it('stores every Interaction the log records', () => {
       expect(
         fixture.database.select(TOTALS_COLUMNS).from(interactions).all(),
       ).toEqual(scenario.expectedTotals);
-    } finally {
-      fixture.close();
-    }
+    });
   });
 
-  it('rebuilds an in-flight Interaction consistently when a session grows', async () => {
-    const scenario = sessionGrowthScenarios[harness](STABLE_SESSION_ID);
-    const fixture = await createIngestFixture(harness);
-    const fullFixture = await createIngestFixture(harness);
-    await writeJsonLines(
-      fixture.sessionPath(STABLE_SESSION_ID),
-      scenario.initialRecords,
-    );
+  describe('a Session log that grew since the last ingest', () => {
+    let fixture: IngestFixture;
+    let fullFixture: IngestFixture;
+    let resumedTotals: unknown[];
 
-    try {
+    beforeEach(async () => {
+      fixture = await createIngestFixture(harness);
+      fullFixture = await createIngestFixture(harness);
+      await writeJsonLines(
+        fixture.sessionPath(STABLE_SESSION_ID),
+        scenario.initialRecords,
+      );
       await run(harness, fixture.database, 'before-growth');
       await appendJsonLines(
         fixture.sessionPath(STABLE_SESSION_ID),
@@ -85,18 +98,25 @@ describe.each(harnesses)('%s ingest', (harness) => {
         ...scenario.appendedRecords,
       ]);
       await run(harness, fullFixture.database, 'full-ingest');
-
-      const resumedTotals = fixture.database
+      resumedTotals = fixture.database
         .select(TOTALS_COLUMNS)
         .from(interactions)
         .all();
+    });
+
+    afterEach(() => {
+      fixture.close();
+      fullFixture.close();
+    });
+
+    it('rebuilds the in-flight Interaction to the totals the whole log records', () => {
+      expect(resumedTotals).toEqual(scenario.expectedTotals);
+    });
+
+    it('leaves the Store indistinguishable from one ingest of the whole log', () => {
       expect(resumedTotals).toEqual(
         fullFixture.database.select(TOTALS_COLUMNS).from(interactions).all(),
       );
-      expect(resumedTotals).toEqual(scenario.expectedTotals);
-    } finally {
-      fixture.close();
-      fullFixture.close();
-    }
+    });
   });
 });

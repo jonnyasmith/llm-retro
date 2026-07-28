@@ -79,7 +79,16 @@ describe('pinChangedLogSources', () => {
     expect(edit.harnesses).toEqual([]);
   });
 
-  it('counts a reformatted field as an edit and sends the paths it parses to', () => {
+  it('counts a reformatted field as an edit', () => {
+    const baselines = input({ codex: '/logs/codex' });
+    const values = input({ codex: '  /logs/codex  \n\n' });
+
+    const edit = pinChangedLogSources(values, baselines);
+
+    expect(edit.harnesses).toEqual(['codex']);
+  });
+
+  it('sends the paths a reformatted field parses to, not its text', () => {
     const baselines = input({ codex: '/logs/codex' });
     const values = input({ codex: '  /logs/codex  \n\n' });
 

@@ -2,7 +2,7 @@ import { appendFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Harness } from '../../jobs/contracts';
-import { openDatabase } from '../database/connection';
+import { openDatabase, type Connection } from '../database/connection';
 import { persistSettings } from '../database/store';
 
 interface HarnessLayout {
@@ -39,9 +39,18 @@ const harnessLayouts: Record<Harness, HarnessLayout> = {
   },
 };
 
+/** A temporary Log source tree paired with the Store an ingest writes into. */
+export interface IngestFixture extends Connection {
+  readonly logSources: string[];
+  readonly sessionDirectory: string;
+  sessionPath(stableSessionId: string): string;
+}
+
 const temporaryDirectories: string[] = [];
 
-export async function createIngestFixture(harness: Harness) {
+export async function createIngestFixture(
+  harness: Harness,
+): Promise<IngestFixture> {
   const layout = harnessLayouts[harness];
   const root = await mkdtemp(join(tmpdir(), `llm-retro-${harness}-ingest-`));
   temporaryDirectories.push(root);
