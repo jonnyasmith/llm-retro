@@ -31,7 +31,9 @@ Every rule below holds at two or more sites today. A reviewer may cite these aga
 ## Tests
 
 - **Hand-roll doubles into a shared `*-fixture.ts`.** `job-run-connection-fixture.ts`, `ingest-fixture.ts`, `render-fixture.ts`. `vi.fn`/`vi.mock` is reserved for globals and framework modules — `$app/navigation`, `fetch`, `$lib/server/bootstrap` in a route test.
-- **One `describe` per exported symbol, and `it` names in the third person describing behaviour.** No arrange/act/assert comments. `expect.requireAssertions` is on, so an assertion-free test fails rather than passes silently.
+- **One `describe` per exported symbol, naming the subject; for anything stateful, nest a `describe` per state beneath it.** `JobRunWatch` groups `a live watch`, `a watch whose connection dropped`, `a watch that has been closed`, and the group owns the `beforeEach` that produces its state, so a leaf never has to spell its own precondition. A module with no states — `formatDuration`, `archivePathFrom` — stays flat.
+- **One rule per `it`, named in the third person.** A name joining two rules with "and" is two tests. No arrange/act/assert comments. `expect.requireAssertions` is on, so an assertion-free test fails rather than passes silently.
+- **One rule at many values is `it.each`, and the name stays free of the values.** The table carries the ordinary case, the awkward one and the endpoints of the range the rule governs; `formatDuration` bands its three ranges that way. A rule whose expectation changes with the data is a second rule, not another row.
 
 ## Not settled
 

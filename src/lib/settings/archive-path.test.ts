@@ -2,21 +2,18 @@ import { describe, expect, it } from 'vitest';
 import { archivePathFrom } from './archive-path';
 
 describe('archivePathFrom', () => {
-  it('keeps the path the user typed', () => {
-    expect(archivePathFrom('/srv/llm-retro/archive')).toBe(
-      '/srv/llm-retro/archive',
-    );
+  it.each([
+    ['/srv/llm-retro/archive', '/srv/llm-retro/archive'],
+    ['  /srv/archive\n', '/srv/archive'],
+    ['\t/srv/archive', '/srv/archive'],
+  ])('keeps the path the user gave, trimmed', (field, expected) => {
+    expect(archivePathFrom(field)).toBe(expected);
   });
 
-  it('reads an empty field as no path at all', () => {
-    expect(archivePathFrom('')).toBeNull();
-  });
-
-  it('reads a whitespace-only field as no path at all', () => {
-    expect(archivePathFrom('  \t ')).toBeNull();
-  });
-
-  it('trims around a path the user pasted', () => {
-    expect(archivePathFrom('  /srv/archive\n')).toBe('/srv/archive');
-  });
+  it.each([[''], ['  \t '], ['\n']])(
+    'reads a field with nothing but whitespace as no path at all',
+    (field) => {
+      expect(archivePathFrom(field)).toBeNull();
+    },
+  );
 });
